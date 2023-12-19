@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include <webgpu/webgpu.h>
+
 struct SDL_Window;
 
 class Game {
@@ -31,4 +33,10 @@ private:
   Params params;
 
   SDL_Window *window{nullptr};
+
+  WGPUInstance instance;
+  WGPUAdapter adapter;
+  WGPUSwapChain swapChain;
+  WGPUDevice device;
+  WGPUQueue queue;
 };
