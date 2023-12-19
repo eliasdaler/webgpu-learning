@@ -37,6 +37,10 @@ private:
   WGPUInstance instance;
   WGPUAdapter adapter;
   WGPUSwapChain swapChain;
+  WGPUTextureFormat swapChainFormat;
   WGPUDevice device;
   WGPUQueue queue;
+
+  WGPUShaderModule shaderModule;
+  WGPURenderPipeline pipeline;
 };

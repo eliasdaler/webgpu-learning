@@ -12,6 +12,28 @@
 #include <filesystem>
 #include <iostream>
 
+namespace {
+static const char *shaderSource = R"(
+@vertex
+fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4f {
+    var p = vec2f(0.0, 0.0);
+    if (in_vertex_index == 0u) {
+        p = vec2f(-0.5, -0.5);
+    } else if (in_vertex_index == 1u) {
+        p = vec2f(0.5, -0.5);
+    } else {
+        p = vec2f(0.0, 0.5);
+    }
+    return vec4f(p, 0.0, 1.0);
+}
+
+@fragment
+fn fs_main() -> @location(0) vec4f {
+    return vec4f(0.4, 1.0, 1.0, 1.0);
+}
+)";
+}
+
 void Game::Params::validate() {
   assert(screenWidth > 0);
   assert(screenHeight > 0);
@@ -100,14 +122,113 @@ void Game::init() {
   swapChainDesc.height = params.screenHeight;
 
   // Dawn doesn't have wgpuSurfaceGetPreferredFormat
-  /* WGPUTextureFormat swapChainFormat =
+  /* swapChainFormat =
       wgpuSurfaceGetPreferredFormat(surface, adapter);
   swapChainDesc.format = swapChainFormat; */
-  swapChainDesc.format = WGPUTextureFormat_BGRA8Unorm;
+  swapChainFormat = WGPUTextureFormat_BGRA8Unorm;
+  swapChainDesc.format = swapChainFormat;
   swapChainDesc.usage = WGPUTextureUsage_RenderAttachment;
   swapChainDesc.presentMode = WGPUPresentMode_Fifo;
 
   swapChain = wgpuDeviceCreateSwapChain(device, surface, &swapChainDesc);
+
+  {
+    WGPUShaderModuleDescriptor shaderDesc = {};
+    shaderDesc.nextInChain = nullptr;
+
+    // Use the extension mechanism to load a WGSL shader source code
+    WGPUShaderModuleWGSLDescriptor shaderCodeDesc = {};
+    // Set the chained struct's header
+    shaderCodeDesc.chain.next = nullptr;
+    shaderCodeDesc.chain.sType = WGPUSType_ShaderModuleWGSLDescriptor;
+    // Connect the chain
+    shaderDesc.nextInChain = &shaderCodeDesc.chain;
+
+    // Setup the actual payload of the shader code descriptor
+    shaderCodeDesc.code = shaderSource;
+
+    shaderModule = wgpuDeviceCreateShaderModule(device, &shaderDesc);
+  }
+
+  {
+    WGPURenderPipelineDescriptor pipelineDesc = {};
+    pipelineDesc.nextInChain = nullptr;
+
+    // Vertex fetch
+    // (We don't use any input buffer so far)
+    pipelineDesc.vertex.bufferCount = 0;
+    pipelineDesc.vertex.buffers = nullptr;
+
+    // Vertex shader
+    pipelineDesc.vertex.module = shaderModule;
+    pipelineDesc.vertex.entryPoint = "vs_main";
+    pipelineDesc.vertex.constantCount = 0;
+    pipelineDesc.vertex.constants = nullptr;
+
+    // Primitive assembly and rasterization
+    // Each sequence of 3 vertices is considered as a triangle
+    pipelineDesc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+    // We'll see later how to specify the order in which vertices should be
+    // connected. When not specified, vertices are considered sequentially.
+    pipelineDesc.primitive.stripIndexFormat = WGPUIndexFormat_Undefined;
+    // The face orientation is defined by assuming that when looking
+    // from the front of the face, its corner vertices are enumerated
+    // in the counter-clockwise (CCW) order.
+    pipelineDesc.primitive.frontFace = WGPUFrontFace_CCW;
+    // But the face orientation does not matter much because we do not
+    // cull (i.e. "hide") the faces pointing away from us (which is often
+    // used for optimization).
+    pipelineDesc.primitive.cullMode = WGPUCullMode_None;
+
+    // Fragment shader
+    WGPUFragmentState fragmentState = {};
+    fragmentState.nextInChain = nullptr;
+    pipelineDesc.fragment = &fragmentState;
+    fragmentState.module = shaderModule;
+    fragmentState.entryPoint = "fs_main";
+    fragmentState.constantCount = 0;
+    fragmentState.constants = nullptr;
+
+    // Configure blend state
+    WGPUBlendState blendState;
+    // Usual alpha blending for the color:
+    blendState.color.srcFactor = WGPUBlendFactor_SrcAlpha;
+    blendState.color.dstFactor = WGPUBlendFactor_OneMinusSrcAlpha;
+    blendState.color.operation = WGPUBlendOperation_Add;
+    // We leave the target alpha untouched:
+    blendState.alpha.srcFactor = WGPUBlendFactor_Zero;
+    blendState.alpha.dstFactor = WGPUBlendFactor_One;
+    blendState.alpha.operation = WGPUBlendOperation_Add;
+
+    WGPUColorTargetState colorTarget = {};
+    colorTarget.nextInChain = nullptr;
+    colorTarget.format = swapChainFormat;
+    colorTarget.blend = &blendState;
+    colorTarget.writeMask =
+        WGPUColorWriteMask_All; // We could write to only some of the color
+                                // channels.
+
+    // We have only one target because our render pass has only one output color
+    // attachment.
+    fragmentState.targetCount = 1;
+    fragmentState.targets = &colorTarget;
+
+    // Depth and stencil tests are not used here
+    pipelineDesc.depthStencil = nullptr;
+
+    // Multi-sampling
+    // Samples per pixel
+    pipelineDesc.multisample.count = 1;
+    // Default value for the mask, meaning "all bits on"
+    pipelineDesc.multisample.mask = ~0u;
+    // Default value as well (irrelevant for count = 1 anyways)
+    pipelineDesc.multisample.alphaToCoverageEnabled = false;
+
+    // Pipeline layout
+    pipelineDesc.layout = nullptr;
+
+    pipeline = wgpuDeviceCreateRenderPipeline(device, &pipelineDesc);
+  }
 }
 
 void Game::loop() {
@@ -206,6 +327,11 @@ void Game::render() {
   // mechanism for clearing the screen when it begins (see descriptor).
   WGPURenderPassEncoder renderPass =
       wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
+
+  wgpuRenderPassEncoderSetPipeline(renderPass, pipeline);
+  // Draw 1 instance of a 3-vertices shape
+  wgpuRenderPassEncoderDraw(renderPass, 3, 1, 0, 0);
+
   wgpuRenderPassEncoderEnd(renderPass);
 
   wgpuTextureViewRelease(nextTexture);
