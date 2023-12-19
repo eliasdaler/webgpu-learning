@@ -8,7 +8,9 @@ Expect a cute animated cat to appear if successful.
 
 ## Building
 
-### Install deps (Linux)
+I'm using [SDL](https://github.com/libsdl-org/SDL) for windows/input and [Google Dawn](https://github.com/google/dawn) as a WebGPU backend. Everything is built from source.
+
+### Install system deps (Linux)
 
 (TODO: probably incomplete list)
 
