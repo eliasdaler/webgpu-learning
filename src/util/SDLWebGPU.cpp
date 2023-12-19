@@ -115,22 +115,21 @@ WGPUSurface SDL_GetWGPUSurface(WGPUInstance instance, SDL_Window *window) {
   {
     HWND hwnd = windowWMInfo.info.win.window;
     HINSTANCE hinstance = GetModuleHandle(NULL);
-    return wgpuInstanceCreateSurface(
-        instance,
-        &(WGPUSurfaceDescriptor){
-            .label = NULL,
-            .nextInChain =
-                (const WGPUChainedStruct *)&(
-                    WGPUSurfaceDescriptorFromWindowsHWND){
-                    .chain =
-                        (WGPUChainedStruct){
-                            .next = NULL,
-                            .sType = WGPUSType_SurfaceDescriptorFromWindowsHWND,
-                        },
-                    .hinstance = hinstance,
-                    .hwnd = hwnd,
-                },
-        });
+
+    WGPUSurfaceDescriptorFromWindowsHWND windowDesc{
+        .chain =
+                WGPUChainedStruct{
+                    .next = NULL,
+                    .sType = WGPUSType_SurfaceDescriptorFromWindowsHWND,
+            },
+            .hinstance = hinstance,
+            .hwnd = hwnd,
+    };
+    WGPUSurfaceDescriptor surfaceDesc{
+        .nextInChain = (const WGPUChainedStruct*)&windowDesc,
+        .label = NULL,
+    };
+    return wgpuInstanceCreateSurface( instance, &surfaceDesc);
   }
 #else
   // TODO: See SDL_syswm.h for other possible enum values!

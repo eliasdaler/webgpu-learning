@@ -113,7 +113,7 @@ void Game::init() {
   // This must be set even if we do not use storage buffers for now
   requiredLimits.limits.minStorageBufferOffsetAlignment =
       supportedLimits.limits.minStorageBufferOffsetAlignment;
-  requiredLimits.limits.minUniformBufferOffsetAlignment = 4;
+  requiredLimits.limits.minUniformBufferOffsetAlignment = 256;
   requiredLimits.limits.maxInterStageShaderComponents = 3;
 
   // Initialize SDL
