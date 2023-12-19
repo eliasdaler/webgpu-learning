@@ -10,4 +10,5 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(ColorDiagnostics)
 include(TargetAddExtraWarnings)
 
+add_subdirectory(third_party)
 add_subdirectory(src)
