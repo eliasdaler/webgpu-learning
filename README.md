@@ -17,6 +17,7 @@ sudo apt install libx11-xcb-dev
 ### Build
 
 ```sh
+git submodule update --init --recursive
 mkdir build && cd build
 cmake ..
 cmake --build .
