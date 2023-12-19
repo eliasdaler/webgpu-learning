@@ -11,20 +11,13 @@
 #include <cassert>
 #include <filesystem>
 #include <iostream>
+#include <vector>
 
 namespace {
-static const char *shaderSource = R"(
+const char *shaderSource = R"(
 @vertex
-fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4f {
-    var p = vec2f(0.0, 0.0);
-    if (in_vertex_index == 0u) {
-        p = vec2f(-0.5, -0.5);
-    } else if (in_vertex_index == 1u) {
-        p = vec2f(0.5, -0.5);
-    } else {
-        p = vec2f(0.0, 0.5);
-    }
-    return vec4f(p, 0.0, 1.0);
+fn vs_main(@location(0) in_vertex_position: vec2f) -> @builtin(position) vec4f {
+    return vec4f(in_vertex_position, 0.0, 1.0);
 }
 
 @fragment
@@ -32,7 +25,26 @@ fn fs_main() -> @location(0) vec4f {
     return vec4f(0.4, 1.0, 1.0, 1.0);
 }
 )";
-}
+
+// Vertex buffer
+// There are 2 floats per vertex, one for x and one for y.
+// But in the end this is just a bunch of floats to the eyes of the GPU,
+// the *layout* will tell how to interpret this.
+std::vector<float> vertexData = {
+    // x, y
+    -0.5,   -0.5,
+
+    +0.5,   -0.5,
+
+    +0.0,   +0.5,
+
+    -0.55f, -0.5,
+
+    -0.05f, +0.5,
+
+    -0.55f, +0.5};
+int vertexCount = static_cast<int>(vertexData.size() / 2);
+} // namespace
 
 void Game::Params::validate() {
   assert(screenWidth > 0);
@@ -64,6 +76,28 @@ void Game::init() {
   WGPURequestAdapterOptions adapterOpts = {};
   adapter = util::requestAdapter(instance, &adapterOpts);
 
+  WGPUSupportedLimits supportedLimits{};
+  supportedLimits.nextInChain = nullptr;
+
+  wgpuAdapterGetLimits(adapter, &supportedLimits);
+  std::cout << "adapter.maxVertexAttributes: "
+            << supportedLimits.limits.maxVertexAttributes << std::endl;
+
+  WGPURequiredLimits requiredLimits{};
+  // We use at most 1 vertex attribute for now
+  requiredLimits.limits.maxVertexAttributes = 1;
+  // We should also tell that we use 1 vertex buffers
+  requiredLimits.limits.maxVertexBuffers = 1;
+  // Maximum size of a buffer is 6 vertices of 2 float each
+  requiredLimits.limits.maxBufferSize = 6 * 2 * sizeof(float);
+  // Maximum stride between 2 consecutive vertices in the vertex buffer
+  // requiredLimits.limits.maxVertexBufferArrayStride = 2 * sizeof(float);
+  // ^ doesn't work on my GPU (max is 0)
+  // This must be set even if we do not use storage buffers for now
+  requiredLimits.limits.minStorageBufferOffsetAlignment =
+      supportedLimits.limits.minStorageBufferOffsetAlignment;
+  requiredLimits.limits.minUniformBufferOffsetAlignment = 4;
+
   // Initialize SDL
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) < 0) {
     printf("SDL could not initialize! SDL Error: %s\n", SDL_GetError());
@@ -91,6 +125,8 @@ void Game::init() {
   deviceDesc.defaultQueue.nextInChain = nullptr;
   deviceDesc.defaultQueue.label = "The default queue";
 
+  deviceDesc.requiredLimits = &requiredLimits;
+
   device = util::requestDevice(adapter, &deviceDesc);
 
   auto onDeviceError = [](WGPUErrorType type, char const *message,
@@ -108,6 +144,10 @@ void Game::init() {
         // std::cout << "WGPU device lost" << std::endl;
       },
       nullptr);
+
+  wgpuDeviceGetLimits(device, &supportedLimits);
+  std::cout << "device.maxVertexAttributes: "
+            << supportedLimits.limits.maxVertexAttributes << std::endl;
 
   queue = wgpuDeviceGetQueue(device);
   auto onQueueWorkDone = [](WGPUQueueWorkDoneStatus status,
@@ -164,6 +204,29 @@ void Game::init() {
     pipelineDesc.vertex.entryPoint = "vs_main";
     pipelineDesc.vertex.constantCount = 0;
     pipelineDesc.vertex.constants = nullptr;
+
+    // Vertex fetch
+    WGPUVertexBufferLayout vertexBufferLayout{};
+    // vertexBufferLayout.nextInChain = nullptr; // NOT IN DAWN
+    // [...] Build vertex buffer layout
+
+    WGPUVertexAttribute vertexAttrib;
+    // == Per attribute ==
+    // Corresponds to @location(...)
+    vertexAttrib.shaderLocation = 0;
+    // Means vec2f in the shader
+    vertexAttrib.format = WGPUVertexFormat_Float32x2;
+    // Index of the first element
+    vertexAttrib.offset = 0;
+
+    vertexBufferLayout.arrayStride = 2 * sizeof(float);
+    vertexBufferLayout.stepMode = WGPUVertexStepMode_Vertex;
+
+    vertexBufferLayout.attributeCount = 1;
+    vertexBufferLayout.attributes = &vertexAttrib;
+
+    pipelineDesc.vertex.bufferCount = 1;
+    pipelineDesc.vertex.buffers = &vertexBufferLayout;
 
     // Primitive assembly and rasterization
     // Each sequence of 3 vertices is considered as a triangle
@@ -228,6 +291,20 @@ void Game::init() {
     pipelineDesc.layout = nullptr;
 
     pipeline = wgpuDeviceCreateRenderPipeline(device, &pipelineDesc);
+  }
+
+  {
+
+    WGPUBufferDescriptor bufferDesc{};
+    bufferDesc.nextInChain = nullptr;
+    bufferDesc.size = vertexData.size() * sizeof(float);
+    bufferDesc.usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_Vertex;
+    bufferDesc.mappedAtCreation = false;
+    vertexBuffer = wgpuDeviceCreateBuffer(device, &bufferDesc);
+
+    // Upload geometry data to the buffer
+    wgpuQueueWriteBuffer(queue, vertexBuffer, 0, vertexData.data(),
+                         bufferDesc.size);
   }
 }
 
@@ -329,8 +406,10 @@ void Game::render() {
       wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
 
   wgpuRenderPassEncoderSetPipeline(renderPass, pipeline);
-  // Draw 1 instance of a 3-vertices shape
-  wgpuRenderPassEncoderDraw(renderPass, 3, 1, 0, 0);
+
+  wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, vertexBuffer, 0,
+                                       vertexData.size() * sizeof(float));
+  wgpuRenderPassEncoderDraw(renderPass, vertexCount, 1, 0, 0);
 
   wgpuRenderPassEncoderEnd(renderPass);
 

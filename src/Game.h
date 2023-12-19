@@ -43,4 +43,6 @@ private:
 
   WGPUShaderModule shaderModule;
   WGPURenderPipeline pipeline;
+
+  WGPUBuffer vertexBuffer;
 };
