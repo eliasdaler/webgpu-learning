@@ -6,6 +6,7 @@
 
 #include <SDL.h>
 
+#include <cstdint>
 #include <webgpu/webgpu.h>
 
 #include <cassert>
@@ -49,19 +50,20 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 }
 )";
 
-// Vertex buffer
-std::vector<float> vertexData = {
-    // x0,  y0,  r0,  g0,  b0
+std::vector<float> pointData = {
+    // x,   y,   r,   g,   b
     -0.5, -0.5, 1.0, 0.0, 0.0, //
-
-    // x1,  y1,  r1,  g1,  b1
     +0.5, -0.5, 0.0, 1.0, 0.0, //
-
-    // ...
-    +0.0, +0.5, 0.0, 0.0, 1.0, //
+    +0.5, +0.5, 0.0, 0.0, 1.0, //
+    -0.5, +0.5, 1.0, 1.0, 0.0  //
 };
-// We now divide the vector size by 5 fields.
-int vertexCount = static_cast<int>(vertexData.size() / 5);
+
+std::vector<std::uint16_t> indexData = {
+    0, 1, 2, // Triangle #0
+    0, 2, 3  // Triangle #1
+};
+
+int indexCount = static_cast<int>(indexData.size());
 
 } // end of anonymous namespace
 
@@ -264,13 +266,26 @@ void Game::init() {
   {
     WGPUBufferDescriptor bufferDesc{
         .usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_Vertex,
-        .size = vertexData.size() * sizeof(float),
+        .size = pointData.size() * sizeof(float),
         .mappedAtCreation = false,
     };
 
     vertexBuffer = wgpuDeviceCreateBuffer(device, &bufferDesc);
 
-    wgpuQueueWriteBuffer(queue, vertexBuffer, 0, vertexData.data(),
+    wgpuQueueWriteBuffer(queue, vertexBuffer, 0, pointData.data(),
+                         bufferDesc.size);
+  }
+
+  {
+    WGPUBufferDescriptor bufferDesc{
+        .usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_Index,
+        .size = indexData.size() * sizeof(std::uint16_t),
+        .mappedAtCreation = false,
+    };
+
+    indexBuffer = wgpuDeviceCreateBuffer(device, &bufferDesc);
+
+    wgpuQueueWriteBuffer(queue, indexBuffer, 0, indexData.data(),
                          bufferDesc.size);
   }
 }
@@ -356,8 +371,11 @@ void Game::render() {
   { // finally, do drawing
     wgpuRenderPassEncoderSetPipeline(renderPass, pipeline);
     wgpuRenderPassEncoderSetVertexBuffer(renderPass, 0, vertexBuffer, 0,
-                                         vertexData.size() * sizeof(float));
-    wgpuRenderPassEncoderDraw(renderPass, vertexCount, 1, 0, 0);
+                                         pointData.size() * sizeof(float));
+    wgpuRenderPassEncoderSetIndexBuffer(renderPass, indexBuffer,
+                                        WGPUIndexFormat_Uint16, 0,
+                                        indexCount * sizeof(std::uint16_t));
+    wgpuRenderPassEncoderDrawIndexed(renderPass, indexCount, 1, 0, 0, 0);
   }
 
   wgpuRenderPassEncoderEnd(renderPass);

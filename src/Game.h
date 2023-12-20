@@ -45,4 +45,5 @@ private:
   WGPURenderPipeline pipeline;
 
   WGPUBuffer vertexBuffer;
+  WGPUBuffer indexBuffer;
 };
