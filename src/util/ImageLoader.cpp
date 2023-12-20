@@ -16,10 +16,11 @@ ImageData loadImage(const std::filesystem::path& p)
     ImageData data;
     if (stbi_is_hdr(p.string().c_str())) {
         data.hdr = true;
-        data.hdrPixels = stbi_loadf(p.string().c_str(), &data.width, &data.height, &data.comp, 0);
+        data.hdrPixels = stbi_loadf(p.string().c_str(), &data.width, &data.height, &data.comp, 4);
     } else {
-        data.pixels = stbi_load(p.string().c_str(), &data.width, &data.height, &data.channels, 0);
+        data.pixels = stbi_load(p.string().c_str(), &data.width, &data.height, &data.channels, 4);
     }
+    data.channels = 4;
     return data;
 }
 
