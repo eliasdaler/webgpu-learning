@@ -2,6 +2,7 @@
 
 #include <filesystem>
 
-namespace util {
+namespace util
+{
 void setCurrentDirToExeDir();
 }

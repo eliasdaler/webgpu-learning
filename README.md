@@ -4,6 +4,8 @@ Following this: https://eliemichel.github.io/LearnWebGPU/
 
 ![triangle](screenshots/1_triangle.png)
 
+![textured_quad](screenshots/2_textured_quad.png)
+
 Expect a cute animated cat to appear if successful.
 
 ## Building

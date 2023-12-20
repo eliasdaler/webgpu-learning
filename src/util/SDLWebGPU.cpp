@@ -42,97 +42,95 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_syswm.h>
 
-WGPUSurface SDL_GetWGPUSurface(WGPUInstance instance, SDL_Window *window) {
-  SDL_SysWMinfo windowWMInfo;
-  SDL_VERSION(&windowWMInfo.version);
-  SDL_GetWindowWMInfo(window, &windowWMInfo);
+WGPUSurface SDL_GetWGPUSurface(WGPUInstance instance, SDL_Window* window)
+{
+    SDL_SysWMinfo windowWMInfo;
+    SDL_VERSION(&windowWMInfo.version);
+    SDL_GetWindowWMInfo(window, &windowWMInfo);
 
 #if defined(SDL_VIDEO_DRIVER_COCOA)
-  {
-    id metal_layer = NULL;
-    NSWindow *ns_window = windowWMInfo.info.cocoa.window;
-    [ns_window.contentView setWantsLayer:YES];
-    metal_layer = [CAMetalLayer layer];
-    [ns_window.contentView setLayer:metal_layer];
-    return wgpuInstanceCreateSurface(
-        instance,
-        &(WGPUSurfaceDescriptor){
-            .label = NULL,
-            .nextInChain =
-                (const WGPUChainedStruct *)&(
-                    WGPUSurfaceDescriptorFromMetalLayer){
-                    .chain =
-                        (WGPUChainedStruct){
-                            .next = NULL,
-                            .sType = WGPUSType_SurfaceDescriptorFromMetalLayer,
-                        },
-                    .layer = metal_layer,
-                },
-        });
-  }
+    {
+        id metal_layer = NULL;
+        NSWindow* ns_window = windowWMInfo.info.cocoa.window;
+        [ns_window.contentView setWantsLayer:YES];
+        metal_layer = [CAMetalLayer layer];
+        [ns_window.contentView setLayer:metal_layer];
+        return wgpuInstanceCreateSurface(
+            instance,
+            &(WGPUSurfaceDescriptor){
+                .label = NULL,
+                .nextInChain =
+                    (const WGPUChainedStruct*)&(WGPUSurfaceDescriptorFromMetalLayer){
+                        .chain =
+                            (WGPUChainedStruct){
+                                .next = NULL,
+                                .sType = WGPUSType_SurfaceDescriptorFromMetalLayer,
+                            },
+                        .layer = metal_layer,
+                    },
+            });
+    }
 #elif defined(SDL_VIDEO_DRIVER_X11)
-  {
-    Display *x11_display = windowWMInfo.info.x11.display;
-    Window x11_window = windowWMInfo.info.x11.window;
-    WGPUSurfaceDescriptorFromXlibWindow xWindowDesc{
-        .chain =
-            WGPUChainedStruct{
-                .next = nullptr,
-                .sType = WGPUSType_SurfaceDescriptorFromXlibWindow,
-            },
-        .display = x11_display,
-        .window = x11_window,
-    };
-    WGPUSurfaceDescriptor desc{
-        .nextInChain = (const WGPUChainedStruct *)&xWindowDesc,
-        .label = nullptr,
-    };
-    return wgpuInstanceCreateSurface(instance, &desc);
-  }
-#elif defined(SDL_VIDEO_DRIVER_WAYLAND)
-  {
-    struct wl_display *wayland_display = windowWMInfo.info.wl.display;
-    struct wl_surface *wayland_surface = windowWMInfo.info.wl.display;
-    return wgpuInstanceCreateSurface(
-        instance,
-        &(WGPUSurfaceDescriptor){
-            .label = NULL,
-            .nextInChain =
-                (const WGPUChainedStruct *)&(
-                    WGPUSurfaceDescriptorFromWaylandSurface){
-                    .chain =
-                        (WGPUChainedStruct){
-                            .next = NULL,
-                            .sType =
-                                WGPUSType_SurfaceDescriptorFromWaylandSurface,
-                        },
-                    .display = wayland_display,
-                    .surface = wayland_surface,
+    {
+        Display* x11_display = windowWMInfo.info.x11.display;
+        Window x11_window = windowWMInfo.info.x11.window;
+        WGPUSurfaceDescriptorFromXlibWindow xWindowDesc{
+            .chain =
+                WGPUChainedStruct{
+                    .next = nullptr,
+                    .sType = WGPUSType_SurfaceDescriptorFromXlibWindow,
                 },
-        });
-  }
+            .display = x11_display,
+            .window = x11_window,
+        };
+        WGPUSurfaceDescriptor desc{
+            .nextInChain = (const WGPUChainedStruct*)&xWindowDesc,
+            .label = nullptr,
+        };
+        return wgpuInstanceCreateSurface(instance, &desc);
+    }
+#elif defined(SDL_VIDEO_DRIVER_WAYLAND)
+    {
+        struct wl_display* wayland_display = windowWMInfo.info.wl.display;
+        struct wl_surface* wayland_surface = windowWMInfo.info.wl.display;
+        return wgpuInstanceCreateSurface(
+            instance,
+            &(WGPUSurfaceDescriptor){
+                .label = NULL,
+                .nextInChain =
+                    (const WGPUChainedStruct*)&(WGPUSurfaceDescriptorFromWaylandSurface){
+                        .chain =
+                            (WGPUChainedStruct){
+                                .next = NULL,
+                                .sType = WGPUSType_SurfaceDescriptorFromWaylandSurface,
+                            },
+                        .display = wayland_display,
+                        .surface = wayland_surface,
+                    },
+            });
+    }
 #elif defined(SDL_VIDEO_DRIVER_WINDOWS)
-  {
-    HWND hwnd = windowWMInfo.info.win.window;
-    HINSTANCE hinstance = GetModuleHandle(NULL);
+    {
+        HWND hwnd = windowWMInfo.info.win.window;
+        HINSTANCE hinstance = GetModuleHandle(NULL);
 
-    WGPUSurfaceDescriptorFromWindowsHWND windowDesc{
-        .chain =
+        WGPUSurfaceDescriptorFromWindowsHWND windowDesc{
+            .chain =
                 WGPUChainedStruct{
                     .next = NULL,
                     .sType = WGPUSType_SurfaceDescriptorFromWindowsHWND,
-            },
+                },
             .hinstance = hinstance,
             .hwnd = hwnd,
-    };
-    WGPUSurfaceDescriptor surfaceDesc{
-        .nextInChain = (const WGPUChainedStruct*)&windowDesc,
-        .label = NULL,
-    };
-    return wgpuInstanceCreateSurface( instance, &surfaceDesc);
-  }
+        };
+        WGPUSurfaceDescriptor surfaceDesc{
+            .nextInChain = (const WGPUChainedStruct*)&windowDesc,
+            .label = NULL,
+        };
+        return wgpuInstanceCreateSurface(instance, &surfaceDesc);
+    }
 #else
-  // TODO: See SDL_syswm.h for other possible enum values!
+    // TODO: See SDL_syswm.h for other possible enum values!
 #error "Unsupported WGPU_TARGET"
 #endif
 }

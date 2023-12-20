@@ -8,42 +8,47 @@ struct SDL_Window;
 
 class Game {
 public:
-  struct Params {
-    void validate();
+    struct Params {
+        void validate();
 
-    int screenWidth = 640;
-    int screenHeight = 480;
+        int screenWidth = 640;
+        int screenHeight = 480;
 
-    std::string windowTitle = "Game";
-  };
+        std::string windowTitle = "Game";
+    };
 
 public:
-  void start(Params params);
+    void start(Params params);
 
 private:
-  void init();
-  void loop();
-  void update(float dt);
-  void render();
-  void quit();
-  void cleanup();
+    void init();
+    void loop();
+    void update(float dt);
+    void render();
+    void quit();
+    void cleanup();
 
-  bool isRunning{false};
+    bool isRunning{false};
 
-  Params params;
+    Params params;
 
-  SDL_Window *window{nullptr};
+    SDL_Window* window{nullptr};
 
-  WGPUInstance instance;
-  WGPUAdapter adapter;
-  WGPUSwapChain swapChain;
-  WGPUTextureFormat swapChainFormat;
-  WGPUDevice device;
-  WGPUQueue queue;
+    WGPUInstance instance;
+    WGPUAdapter adapter;
+    WGPUSwapChain swapChain;
+    WGPUTextureFormat swapChainFormat;
+    WGPUDevice device;
+    WGPUQueue queue;
 
-  WGPUShaderModule shaderModule;
-  WGPURenderPipeline pipeline;
+    WGPUShaderModule shaderModule;
+    WGPURenderPipeline pipeline;
 
-  WGPUBuffer vertexBuffer;
-  WGPUBuffer indexBuffer;
+    WGPUBuffer vertexBuffer;
+    WGPUBuffer indexBuffer;
+
+    WGPUTexture texture;
+
+    WGPUBindGroupLayout bindGroupLayout;
+    WGPUBindGroup bindGroup;
 };

@@ -16,3 +16,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
   target_compile_options(dawn_wire PRIVATE -Wno-return-type)
   target_compile_options(dawn_native PRIVATE -Wno-return-type)
 endif()
+
+### stb
+
+add_subdirectory(stb)
