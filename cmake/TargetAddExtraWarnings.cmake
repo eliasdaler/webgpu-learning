@@ -18,6 +18,7 @@ function(target_add_extra_warnings target)
         -Wno-unused-variable
         -Wno-unused-parameter 
         -Wno-unused-but-set-variable
+        -Wno-missing-field-initializers
       )
 
     if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
