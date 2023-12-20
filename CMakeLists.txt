@@ -19,8 +19,8 @@ endif()
 
 # Check that git submodules were cloned
 if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL/CMakeLists.txt")
-  message("${CMAKE_CURRENT_SOURCE_DIR}/SDL/CMakeLists.txt")
-  message(FATAL_ERROR "Please initialize submodules using:\n  git submodule update --init --recursive")
+  include(FetchSubmodules)
+  fetch_submodules()
 endif()
 
 add_subdirectory(third_party)
