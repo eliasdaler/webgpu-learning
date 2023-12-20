@@ -7,20 +7,17 @@ function(target_add_extra_warnings target)
         -Wall
         -Wextra
         -Wpedantic
-        # -Wnull-dereference - has some false-positives
-        -Wmissing-field-initializers
     )
 
     # ignore some warnings
     target_compile_options(${target}
       PRIVATE
-        -Wno-missing-braces # sometimes not having braces in if(a & b || c) is not that dangerous
-        -Wno-unused-local-typedefs # some libs have this...
-        -Wno-unused-parameter # thanks, sol2... TODO: remove when fixed
-        -Wno-unused-variable # thanks, vorbis
-        -Wno-volatile # glm
-        -Wno-missing-field-initializers # whatever
-        -Wno-unused-but-set-variable # whatever[2]
+        -Wno-missing-braces # sometimes not having braces in if(a && b || c) is not that dangerous
+        # whatever:
+        -Wno-unused-local-typedefs
+        -Wno-unused-variable
+        -Wno-unused-parameter 
+        -Wno-unused-but-set-variable
       )
 
     if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
