@@ -47,7 +47,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     let coord = vec2i(uv_c * vec2f(textureDimensions(texture)));
     let textureColor = textureLoad(texture, coord, 0).rgb;
-    return vec4f(textureColor, 1.0);
+    let color = pow(textureColor, vec3(1/2.2f));
+    return vec4f(color, 1.0);
 }
 )";
 
@@ -211,7 +212,7 @@ void Game::init()
                     .height = static_cast<std::uint32_t>(data.height),
                     .depthOrArrayLayers = 1,
                 },
-            .format = WGPUTextureFormat_RGBA8Unorm,
+            .format = WGPUTextureFormat_RGBA8UnormSrgb,
             .mipLevelCount = 1,
             .sampleCount = 1,
         };
@@ -251,7 +252,7 @@ void Game::init()
         bindGroupLayout = wgpuDeviceCreateBindGroupLayout(device, &bindGroupLayoutDesc);
 
         const WGPUTextureViewDescriptor textureViewDesc{
-            .format = WGPUTextureFormat_RGBA8Unorm,
+            .format = WGPUTextureFormat_RGBA8UnormSrgb,
             .dimension = WGPUTextureViewDimension_2D,
             .baseMipLevel = 0,
             .mipLevelCount = 1,
