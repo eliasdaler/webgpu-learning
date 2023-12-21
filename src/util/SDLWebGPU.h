@@ -1,6 +1,6 @@
 #pragma once
 
 #include <SDL2/SDL.h>
-#include <webgpu/webgpu.h>
+#include <webgpu/webgpu_cpp.h>
 
-WGPUSurface SDL_GetWGPUSurface(WGPUInstance instance, SDL_Window* window);
+wgpu::Surface SDL_GetWGPUSurface(const wgpu::Instance& instance, SDL_Window* window);

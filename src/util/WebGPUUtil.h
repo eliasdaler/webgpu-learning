@@ -1,9 +1,11 @@
-#include <webgpu/webgpu.h>
+#pragma once
+#include <webgpu/webgpu_cpp.h>
 
-namespace util {
+namespace util
+{
 void initWebGPU();
-WGPUAdapter requestAdapter(WGPUInstance instance,
-                           WGPURequestAdapterOptions const *options);
-WGPUDevice requestDevice(WGPUAdapter adapter,
-                         WGPUDeviceDescriptor const *descriptor);
+wgpu::Adapter requestAdapter(
+    const wgpu::Instance& instance,
+    wgpu::RequestAdapterOptions const* options);
+wgpu::Device requestDevice(wgpu::Adapter adapter, wgpu::DeviceDescriptor const* descriptor);
 } // namespace util

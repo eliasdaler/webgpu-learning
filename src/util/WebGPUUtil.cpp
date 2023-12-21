@@ -1,6 +1,5 @@
 #include "util/WebGPUUtil.h"
 
-#include <cassert>
 #include <iostream>
 
 #include <dawn/dawn_proc.h>
@@ -14,60 +13,44 @@ void initWebGPU()
     dawnProcSetProcs(&dawn::native::GetProcs());
 }
 
-WGPUAdapter requestAdapter(WGPUInstance instance, WGPURequestAdapterOptions const* options)
+wgpu::Adapter requestAdapter(
+    const wgpu::Instance& instance,
+    wgpu::RequestAdapterOptions const* options)
 {
-    struct UserData {
-        WGPUAdapter adapter = nullptr;
-        bool requestEnded = false;
-    };
-    UserData userData;
-
     auto onAdapterRequestEnded = [](WGPURequestAdapterStatus status,
                                     WGPUAdapter adapter,
                                     char const* message,
                                     void* pUserData) {
-        UserData& userData = *reinterpret_cast<UserData*>(pUserData);
         if (status == WGPURequestAdapterStatus_Success) {
-            userData.adapter = adapter;
+            // std::cout << "Got WebGPU adapter" << std::endl;
+            *static_cast<wgpu::Adapter*>(pUserData) = wgpu::Adapter::Acquire(adapter);
         } else {
             std::cout << "Could not get WebGPU adapter: " << message << std::endl;
         }
-        userData.requestEnded = true;
     };
 
-    wgpuInstanceRequestAdapter(instance, options, onAdapterRequestEnded, (void*)&userData);
+    wgpu::Adapter adapter;
+    instance.RequestAdapter(options, onAdapterRequestEnded, (void*)&adapter);
 
-    assert(userData.requestEnded);
-
-    return userData.adapter;
+    return adapter;
 }
 
-WGPUDevice requestDevice(WGPUAdapter adapter, WGPUDeviceDescriptor const* descriptor)
+wgpu::Device requestDevice(wgpu::Adapter adapter, wgpu::DeviceDescriptor const* descriptor)
 {
-    struct UserData {
-        WGPUDevice device = nullptr;
-        bool requestEnded = false;
-    };
-    UserData userData;
-
     auto onDeviceRequestEnded = [](WGPURequestDeviceStatus status,
                                    WGPUDevice device,
                                    char const* message,
                                    void* pUserData) {
-        UserData& userData = *reinterpret_cast<UserData*>(pUserData);
         if (status == WGPURequestDeviceStatus_Success) {
-            userData.device = device;
+            *static_cast<wgpu::Device*>(pUserData) = wgpu::Device::Acquire(device);
         } else {
             std::cout << "Could not get WebGPU device: " << message << std::endl;
         }
-        userData.requestEnded = true;
     };
 
-    wgpuAdapterRequestDevice(adapter, descriptor, onDeviceRequestEnded, (void*)&userData);
-
-    assert(userData.requestEnded);
-
-    return userData.device;
+    wgpu::Device device;
+    adapter.RequestDevice(descriptor, onDeviceRequestEnded, (void*)&device);
+    return device;
 }
 
 } // end of namespace util

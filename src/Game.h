@@ -1,8 +1,9 @@
 #pragma once
 
+#include <memory>
 #include <string>
 
-#include <webgpu/webgpu.h>
+#include <webgpu/webgpu_cpp.h>
 
 struct SDL_Window;
 
@@ -34,21 +35,23 @@ private:
 
     SDL_Window* window{nullptr};
 
-    WGPUInstance instance;
-    WGPUAdapter adapter;
-    WGPUSwapChain swapChain;
-    WGPUTextureFormat swapChainFormat;
-    WGPUDevice device;
-    WGPUQueue queue;
+    wgpu::Instance instance;
+    wgpu::Adapter adapter;
+    wgpu::Device device;
 
-    WGPUShaderModule shaderModule;
-    WGPURenderPipeline pipeline;
+    std::unique_ptr<wgpu::SwapChain> swapChain;
+    wgpu::TextureFormat swapChainFormat;
+    wgpu::Queue queue;
 
-    WGPUBuffer vertexBuffer;
-    WGPUBuffer indexBuffer;
+    wgpu::ShaderModule shaderModule;
+    wgpu::RenderPipeline pipeline;
 
-    WGPUTexture texture;
+    wgpu::Buffer vertexBuffer;
+    wgpu::Buffer indexBuffer;
+    wgpu::Surface surface;
 
-    WGPUBindGroupLayout bindGroupLayout;
-    WGPUBindGroup bindGroup;
+    wgpu::Texture texture;
+
+    wgpu::BindGroupLayout bindGroupLayout;
+    wgpu::BindGroup bindGroup;
 };

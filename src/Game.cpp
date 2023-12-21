@@ -8,7 +8,7 @@
 #include <SDL.h>
 
 #include <cstdint>
-#include <webgpu/webgpu.h>
+#include <webgpu/webgpu_cpp.h>
 
 #include <cassert>
 #include <filesystem>
@@ -34,7 +34,7 @@ struct VertexOutput {
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     out.position = vec4f(in.position, 0.0, 1.0);
-    out.uv = in.uv; 
+    out.uv = in.uv;
     return out;
 }
 
@@ -54,8 +54,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
 /* clang-format off */
 std::vector<float> pointData = {
-    // x,   y,   u,   v,  
-    -0.5, -0.5, 0.0, 0.0, 
+    // x,   y,   u,   v,
+    -0.5, -0.5, 0.0, 0.0,
     +0.5, -0.5, 1.0, 0.0,
     +0.5, +0.5, 1.0, 1.0,
     -0.5, +0.5, 0.0, 1.0,
@@ -97,20 +97,20 @@ void Game::init()
 
     util::initWebGPU();
 
-    WGPUInstanceDescriptor instanceDesc{};
-    instance = wgpuCreateInstance(&instanceDesc);
+    wgpu::InstanceDescriptor instanceDesc{};
+    instance = wgpu::CreateInstance(&instanceDesc);
     if (!instance) {
         std::cerr << "Could not initialize WebGPU!\n";
         std::exit(1);
     }
 
-    WGPURequestAdapterOptions adapterOpts{};
+    wgpu::RequestAdapterOptions adapterOpts{};
     adapter = util::requestAdapter(instance, &adapterOpts);
 
-    WGPUSupportedLimits supportedLimits{};
-    wgpuAdapterGetLimits(adapter, &supportedLimits);
+    wgpu::SupportedLimits supportedLimits{};
+    adapter.GetLimits(&supportedLimits);
 
-    WGPURequiredLimits requiredLimits{
+    wgpu::RequiredLimits requiredLimits{
         .limits =
             {
                 .minUniformBufferOffsetAlignment = 256,
@@ -142,9 +142,9 @@ void Game::init()
         std::exit(1);
     }
 
-    WGPUSurface surface = SDL_GetWGPUSurface(instance, window);
+    surface = SDL_GetWGPUSurface(instance, window);
 
-    WGPUDeviceDescriptor deviceDesc{
+    wgpu::DeviceDescriptor deviceDesc{
         .label = "Device",
         .requiredLimits = &requiredLimits,
     };
@@ -158,157 +158,156 @@ void Game::init()
         }
         std::cout << std::endl;
     };
-    wgpuDeviceSetUncapturedErrorCallback(device, onDeviceError, nullptr);
+    device.SetUncapturedErrorCallback(onDeviceError, nullptr);
 
-    wgpuDeviceSetDeviceLostCallback(
-        device,
+    device.SetDeviceLostCallback(
         [](WGPUDeviceLostReason reason, char const* message, void* userdata) {
             // std::cout << "WGPU device lost" << std::endl;
         },
         nullptr);
 
-    queue = wgpuDeviceGetQueue(device);
+    queue = device.GetQueue();
     auto onQueueWorkDone = [](WGPUQueueWorkDoneStatus status, void* /* pUserData */) {
         // std::cout << "Queued work finished with status: " << status << std::endl;
     };
-    wgpuQueueOnSubmittedWorkDone(queue, onQueueWorkDone, nullptr);
+    queue.OnSubmittedWorkDone(onQueueWorkDone, nullptr);
 
     { // init swapchain
-        swapChainFormat = WGPUTextureFormat_BGRA8Unorm;
+        swapChainFormat = wgpu::TextureFormat::BGRA8Unorm;
 
-        const WGPUSwapChainDescriptor swapChainDesc = {
-            .usage = WGPUTextureUsage_RenderAttachment,
+        const wgpu::SwapChainDescriptor swapChainDesc = {
+            .usage = wgpu::TextureUsage::RenderAttachment,
             .format = swapChainFormat,
             .width = static_cast<std::uint32_t>(params.screenWidth),
             .height = static_cast<std::uint32_t>(params.screenHeight),
-            .presentMode = WGPUPresentMode_Fifo,
+            .presentMode = wgpu::PresentMode::Fifo,
         };
 
-        swapChain = wgpuDeviceCreateSwapChain(device, surface, &swapChainDesc);
+        swapChain =
+            std::make_unique<wgpu::SwapChain>(device.CreateSwapChain(surface, &swapChainDesc));
     }
 
     {
-        const WGPUShaderModuleWGSLDescriptor shaderCodeDesc = {
-            .chain = {.sType = WGPUSType_ShaderModuleWGSLDescriptor},
-            .code = shaderSource,
-        };
+        wgpu::ShaderModuleWGSLDescriptor shaderCodeDesc;
+        shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
+        shaderCodeDesc.code = shaderSource;
 
-        WGPUShaderModuleDescriptor shaderDesc{};
-        shaderDesc.nextInChain = &shaderCodeDesc.chain;
+        wgpu::ShaderModuleDescriptor shaderDesc{};
+        shaderDesc.nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&shaderCodeDesc);
 
-        shaderModule = wgpuDeviceCreateShaderModule(device, &shaderDesc);
+        shaderModule = device.CreateShaderModule(&shaderDesc);
     }
 
     {
         ImageData data = util::loadImage("assets/textures/shinji.png");
         assert(data.channels == 4);
 
-        const WGPUTextureDescriptor textureDesc{
-            .usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst,
-            .dimension = WGPUTextureDimension_2D,
+        const wgpu::TextureDescriptor textureDesc{
+            .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
+            .dimension = wgpu::TextureDimension::e2D,
             .size =
                 {
                     .width = static_cast<std::uint32_t>(data.width),
                     .height = static_cast<std::uint32_t>(data.height),
                     .depthOrArrayLayers = 1,
                 },
-            .format = WGPUTextureFormat_RGBA8UnormSrgb,
+            .format = wgpu::TextureFormat::RGBA8UnormSrgb,
             .mipLevelCount = 1,
             .sampleCount = 1,
         };
-        texture = wgpuDeviceCreateTexture(device, &textureDesc);
+        texture = device.CreateTexture(&textureDesc);
 
-        const WGPUImageCopyTexture destination{
+        const wgpu::ImageCopyTexture destination{
             .texture = texture,
             .mipLevel = 0,
             .origin = {0, 0, 0},
         };
-        const WGPUTextureDataLayout source{
+        const wgpu::TextureDataLayout source{
             .bytesPerRow = static_cast<std::uint32_t>(data.width * data.channels),
             .rowsPerImage = static_cast<std::uint32_t>(data.height)};
 
         const auto pixelsSize = data.width * data.height * data.channels;
-        wgpuQueueWriteTexture(
-            queue, &destination, (void*)data.pixels, pixelsSize, &source, &textureDesc.size);
+        queue
+            .WriteTexture(&destination, (void*)data.pixels, pixelsSize, &source, &textureDesc.size);
     }
 
     {
-        const std::vector<WGPUBindGroupLayoutEntry> bindingLayoutEntries{
+        const std::vector<wgpu::BindGroupLayoutEntry> bindingLayoutEntries{
             {
                 .binding = 0,
-                .visibility = WGPUShaderStage_Fragment,
+                .visibility = wgpu::ShaderStage::Fragment,
                 .texture =
                     {
-                        .sampleType = WGPUTextureSampleType_Float,
-                        .viewDimension = WGPUTextureViewDimension_2D,
+                        .sampleType = wgpu::TextureSampleType::Float,
+                        .viewDimension = wgpu::TextureViewDimension::e2D,
                     },
             },
         };
 
-        const WGPUBindGroupLayoutDescriptor bindGroupLayoutDesc{
+        const wgpu::BindGroupLayoutDescriptor bindGroupLayoutDesc{
             .entryCount = bindingLayoutEntries.size(),
             .entries = bindingLayoutEntries.data(),
         };
-        bindGroupLayout = wgpuDeviceCreateBindGroupLayout(device, &bindGroupLayoutDesc);
+        bindGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
 
-        const WGPUTextureViewDescriptor textureViewDesc{
-            .format = WGPUTextureFormat_RGBA8UnormSrgb,
-            .dimension = WGPUTextureViewDimension_2D,
+        const wgpu::TextureViewDescriptor textureViewDesc{
+            .format = wgpu::TextureFormat::RGBA8UnormSrgb,
+            .dimension = wgpu::TextureViewDimension::e2D,
             .baseMipLevel = 0,
             .mipLevelCount = 1,
             .baseArrayLayer = 0,
             .arrayLayerCount = 1,
-            .aspect = WGPUTextureAspect_All,
+            .aspect = wgpu::TextureAspect::All,
         };
-        const auto textureView = wgpuTextureCreateView(texture, &textureViewDesc);
+        const auto textureView = texture.CreateView(&textureViewDesc);
 
-        const std::vector<WGPUBindGroupEntry> bindings{{
+        const std::vector<wgpu::BindGroupEntry> bindings{{
             .binding = 0,
             .textureView = textureView,
         }};
-        WGPUBindGroupDescriptor bindGroupDesc{
-            .layout = bindGroupLayout,
+        wgpu::BindGroupDescriptor bindGroupDesc{
+            .layout = bindGroupLayout.Get(),
             .entryCount = bindings.size(),
             .entries = bindings.data(),
         };
 
-        bindGroup = wgpuDeviceCreateBindGroup(device, &bindGroupDesc);
+        bindGroup = device.CreateBindGroup(&bindGroupDesc);
     }
 
     {
-        WGPURenderPipelineDescriptor pipelineDesc{};
+        wgpu::RenderPipelineDescriptor pipelineDesc{};
 
-        pipelineDesc.primitive = {
-            .topology = WGPUPrimitiveTopology_TriangleList,
-            .stripIndexFormat = WGPUIndexFormat_Undefined,
-            .frontFace = WGPUFrontFace_CCW,
-            .cullMode = WGPUCullMode_None,
+        pipelineDesc.primitive = wgpu::PrimitiveState{
+            .topology = wgpu::PrimitiveTopology::TriangleList,
+            .stripIndexFormat = wgpu::IndexFormat::Undefined,
+            .frontFace = wgpu::FrontFace::CCW,
+            .cullMode = wgpu::CullMode::None,
         };
 
         // vertex
-        const std::vector<WGPUVertexAttribute> vertexAttribs{
+        const std::vector<wgpu::VertexAttribute> vertexAttribs{
             {
                 // position
-                .format = WGPUVertexFormat_Float32x2,
+                .format = wgpu::VertexFormat::Float32x2,
                 .offset = 0,
                 .shaderLocation = 0,
             },
             {
                 // uv
-                .format = WGPUVertexFormat_Float32x2,
+                .format = wgpu::VertexFormat::Float32x2,
                 .offset = 2 * sizeof(float),
                 .shaderLocation = 1,
             },
         };
 
-        const WGPUVertexBufferLayout vertexBufferLayout{
+        const wgpu::VertexBufferLayout vertexBufferLayout{
             .arrayStride = 4 * sizeof(float),
-            .stepMode = WGPUVertexStepMode_Vertex,
+            .stepMode = wgpu::VertexStepMode::Vertex,
             .attributeCount = static_cast<std::size_t>(vertexAttribs.size()),
             .attributes = vertexAttribs.data(),
         };
 
-        pipelineDesc.vertex = {
+        pipelineDesc.vertex = wgpu::VertexState{
             .module = shaderModule,
             .entryPoint = "vs_main",
             .bufferCount = 1,
@@ -316,26 +315,26 @@ void Game::init()
         };
 
         // fragment
-        const WGPUBlendState blendState{
+        const wgpu::BlendState blendState{
             .color =
                 {
-                    .operation = WGPUBlendOperation_Add,
-                    .srcFactor = WGPUBlendFactor_SrcAlpha,
-                    .dstFactor = WGPUBlendFactor_OneMinusSrcAlpha,
+                    .operation = wgpu::BlendOperation::Add,
+                    .srcFactor = wgpu::BlendFactor::SrcAlpha,
+                    .dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha,
                 },
             .alpha = {
-                .operation = WGPUBlendOperation_Add,
-                .srcFactor = WGPUBlendFactor_Zero,
-                .dstFactor = WGPUBlendFactor_One,
+                .operation = wgpu::BlendOperation::Add,
+                .srcFactor = wgpu::BlendFactor::Zero,
+                .dstFactor = wgpu::BlendFactor::One,
             }};
 
-        WGPUColorTargetState colorTarget = {
+        wgpu::ColorTargetState colorTarget = {
             .format = swapChainFormat,
             .blend = &blendState,
-            .writeMask = WGPUColorWriteMask_All,
+            .writeMask = wgpu::ColorWriteMask::All,
         };
 
-        WGPUFragmentState fragmentState = {
+        wgpu::FragmentState fragmentState = {
             .module = shaderModule,
             .entryPoint = "fs_main",
             .targetCount = 1,
@@ -347,37 +346,37 @@ void Game::init()
         pipelineDesc.multisample.mask = ~0u;
         pipelineDesc.multisample.alphaToCoverageEnabled = false;
 
-        WGPUPipelineLayoutDescriptor layoutDesc{
+        wgpu::PipelineLayoutDescriptor layoutDesc{
             .bindGroupLayoutCount = 1,
             .bindGroupLayouts = &bindGroupLayout,
         };
-        pipelineDesc.layout = wgpuDeviceCreatePipelineLayout(device, &layoutDesc);
+        pipelineDesc.layout = device.CreatePipelineLayout(&layoutDesc);
 
-        pipeline = wgpuDeviceCreateRenderPipeline(device, &pipelineDesc);
+        pipeline = device.CreateRenderPipeline(&pipelineDesc);
     }
 
     {
-        WGPUBufferDescriptor bufferDesc{
-            .usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_Vertex,
+        wgpu::BufferDescriptor bufferDesc{
+            .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Vertex,
             .size = pointData.size() * sizeof(float),
             .mappedAtCreation = false,
         };
 
-        vertexBuffer = wgpuDeviceCreateBuffer(device, &bufferDesc);
+        vertexBuffer = device.CreateBuffer(&bufferDesc);
 
-        wgpuQueueWriteBuffer(queue, vertexBuffer, 0, pointData.data(), bufferDesc.size);
+        queue.WriteBuffer(vertexBuffer, 0, pointData.data(), bufferDesc.size);
     }
 
     {
-        WGPUBufferDescriptor bufferDesc{
-            .usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_Index,
+        wgpu::BufferDescriptor bufferDesc{
+            .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Index,
             .size = indexData.size() * sizeof(std::uint16_t),
             .mappedAtCreation = false,
         };
 
-        indexBuffer = wgpuDeviceCreateBuffer(device, &bufferDesc);
+        indexBuffer = device.CreateBuffer(&bufferDesc);
 
-        wgpuQueueWriteBuffer(queue, indexBuffer, 0, indexData.data(), bufferDesc.size);
+        queue.WriteBuffer(indexBuffer, 0, indexData.data(), bufferDesc.size);
     }
 }
 
@@ -433,52 +432,49 @@ void Game::update(float dt)
 void Game::render()
 {
     // cornflower blue <3
-    static const WGPUColor clearColor{100.f / 255.f, 149.f / 255.f, 237.f / 255.f, 255.f / 255.f};
+    static const wgpu::Color clearColor{100.f / 255.f, 149.f / 255.f, 237.f / 255.f, 255.f / 255.f};
 
-    WGPUTextureView nextFrameTexture = wgpuSwapChainGetCurrentTextureView(swapChain);
+    auto nextFrameTexture = swapChain->GetCurrentTextureView();
     if (!nextFrameTexture) {
         std::cerr << "Cannot acquire next swap chain texture" << std::endl;
         return;
     }
 
-    WGPUCommandEncoderDescriptor commandEncoderDesc{};
-    const auto encoder = wgpuDeviceCreateCommandEncoder(device, &commandEncoderDesc);
+    wgpu::CommandEncoderDescriptor commandEncoderDesc{};
+    const auto encoder = device.CreateCommandEncoder(&commandEncoderDesc);
 
-    const WGPURenderPassColorAttachment renderPassColorAttachment = {
+    const wgpu::RenderPassColorAttachment renderPassColorAttachment = {
         .view = nextFrameTexture,
-        .loadOp = WGPULoadOp_Clear,
-        .storeOp = WGPUStoreOp_Store,
+        .loadOp = wgpu::LoadOp::Clear,
+        .storeOp = wgpu::StoreOp::Store,
         .clearValue = clearColor,
     };
 
-    const WGPURenderPassDescriptor renderPassDesc = {
+    const wgpu::RenderPassDescriptor renderPassDesc = {
         .colorAttachmentCount = 1,
         .colorAttachments = &renderPassColorAttachment,
     };
 
-    const auto renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
+    const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
 
     { // finally, do drawing
-        wgpuRenderPassEncoderSetPipeline(renderPass, pipeline);
-        wgpuRenderPassEncoderSetBindGroup(renderPass, 0, bindGroup, 0, nullptr);
-        wgpuRenderPassEncoderSetVertexBuffer(
-            renderPass, 0, vertexBuffer, 0, pointData.size() * sizeof(float));
-        wgpuRenderPassEncoderSetIndexBuffer(
-            renderPass, indexBuffer, WGPUIndexFormat_Uint16, 0, indexCount * sizeof(std::uint16_t));
-        wgpuRenderPassEncoderDrawIndexed(renderPass, indexCount, 1, 0, 0, 0);
+        renderPass.SetPipeline(pipeline);
+        renderPass.SetBindGroup(0, bindGroup, 0, nullptr);
+        renderPass.SetVertexBuffer(0, vertexBuffer, 0, pointData.size() * sizeof(float));
+        renderPass.SetIndexBuffer(
+            indexBuffer, wgpu::IndexFormat::Uint16, 0, indexCount * sizeof(std::uint16_t));
+        renderPass.DrawIndexed(indexCount, 1, 0, 0, 0);
     }
 
-    wgpuRenderPassEncoderEnd(renderPass);
-
-    wgpuTextureViewRelease(nextFrameTexture);
+    renderPass.End();
 
     // submit
-    WGPUCommandBufferDescriptor cmdBufferDescriptor{};
-    const auto command = wgpuCommandEncoderFinish(encoder, &cmdBufferDescriptor);
-    wgpuQueueSubmit(queue, 1, &command);
+    wgpu::CommandBufferDescriptor cmdBufferDescriptor{};
+    const auto command = encoder.Finish(&cmdBufferDescriptor);
+    queue.Submit(1, &command);
 
     // flush
-    wgpuSwapChainPresent(swapChain);
+    swapChain->Present();
 }
 
 void Game::quit()
@@ -488,11 +484,7 @@ void Game::quit()
 
 void Game::cleanup()
 {
-    wgpuSwapChainRelease(swapChain);
-    wgpuDeviceRelease(device);
-    wgpuAdapterRelease(adapter);
-    wgpuInstanceRelease(instance);
-
+    swapChain.reset();
     SDL_DestroyWindow(window);
 
     SDL_Quit();

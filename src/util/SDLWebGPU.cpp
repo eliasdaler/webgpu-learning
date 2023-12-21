@@ -31,7 +31,7 @@
 
 #include "util/SDLWebGPU.h"
 
-#include <webgpu/webgpu.h>
+#include <webgpu/webgpu_cpp.h>
 
 #if defined(SDL_VIDEO_DRIVER_COCOA)
 #include <Cocoa/Cocoa.h>
@@ -42,14 +42,15 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_syswm.h>
 
-WGPUSurface SDL_GetWGPUSurface(WGPUInstance instance, SDL_Window* window)
+wgpu::Surface SDL_GetWGPUSurface(const wgpu::Instance& instance, SDL_Window* window)
 {
     SDL_SysWMinfo windowWMInfo;
     SDL_VERSION(&windowWMInfo.version);
     SDL_GetWindowWMInfo(window, &windowWMInfo);
 
 #if defined(SDL_VIDEO_DRIVER_COCOA)
-    {
+    static_assert(false, "untested");
+    /* {
         id metal_layer = NULL;
         NSWindow* ns_window = windowWMInfo.info.cocoa.window;
         [ns_window.contentView setWantsLayer:YES];
@@ -69,28 +70,23 @@ WGPUSurface SDL_GetWGPUSurface(WGPUInstance instance, SDL_Window* window)
                         .layer = metal_layer,
                     },
             });
-    }
+    } */
 #elif defined(SDL_VIDEO_DRIVER_X11)
     {
         Display* x11_display = windowWMInfo.info.x11.display;
         Window x11_window = windowWMInfo.info.x11.window;
-        WGPUSurfaceDescriptorFromXlibWindow xWindowDesc{
-            .chain =
-                WGPUChainedStruct{
-                    .next = nullptr,
-                    .sType = WGPUSType_SurfaceDescriptorFromXlibWindow,
-                },
-            .display = x11_display,
-            .window = x11_window,
-        };
-        WGPUSurfaceDescriptor desc{
-            .nextInChain = (const WGPUChainedStruct*)&xWindowDesc,
-            .label = nullptr,
-        };
-        return wgpuInstanceCreateSurface(instance, &desc);
+
+        wgpu::SurfaceDescriptorFromXlibWindow x11SurfDesc;
+        x11SurfDesc.display = x11_display;
+        x11SurfDesc.window = x11_window;
+
+        wgpu::SurfaceDescriptor surfaceDesc;
+        surfaceDesc.nextInChain = &x11SurfDesc;
+        return instance.CreateSurface(&surfaceDesc);
     }
 #elif defined(SDL_VIDEO_DRIVER_WAYLAND)
-    {
+    static_assert(false, "untested");
+    /* {
         struct wl_display* wayland_display = windowWMInfo.info.wl.display;
         struct wl_surface* wayland_surface = windowWMInfo.info.wl.display;
         return wgpuInstanceCreateSurface(
@@ -108,9 +104,10 @@ WGPUSurface SDL_GetWGPUSurface(WGPUInstance instance, SDL_Window* window)
                         .surface = wayland_surface,
                     },
             });
-    }
+    } */
 #elif defined(SDL_VIDEO_DRIVER_WINDOWS)
-    {
+    static_assert(false, "untested");
+    /* {
         HWND hwnd = windowWMInfo.info.win.window;
         HINSTANCE hinstance = GetModuleHandle(NULL);
 
@@ -128,7 +125,7 @@ WGPUSurface SDL_GetWGPUSurface(WGPUInstance instance, SDL_Window* window)
             .label = NULL,
         };
         return wgpuInstanceCreateSurface(instance, &surfaceDesc);
-    }
+    } */
 #else
     // TODO: See SDL_syswm.h for other possible enum values!
 #error "Unsupported WGPU_TARGET"
