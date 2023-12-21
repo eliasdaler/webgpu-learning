@@ -27,3 +27,8 @@ mkdir build && cd build
 cmake ..
 cmake --build .
 ```
+
+## Status of WebGPU support in browsers on Linux
+
+* Firefox Nightly (123.0) - kinda works, but WGSL support seems incomplete (e.g. `override` doesn't work)
+* Chrome Unstable (122.0.6182.0) - only works when launched with `--enable-features=Vulkan,UseSkiaRenderer --enable-unsafe-webgpu`
