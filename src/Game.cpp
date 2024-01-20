@@ -44,14 +44,10 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
 
     var position = uniforms.viewProj * uniforms.model * vec4(in.position, 1.0);
-    // var position = uniforms.model * vec4(in.position, 1.0);
-
-    // todo: this will probably be fixed by passing a proper viewProj matrix?
-    // position.z = -position.z * 0.5 + 0.5;
 
     out.position = position;
-
     out.uv = in.uv;
+
     return out;
 }
 
