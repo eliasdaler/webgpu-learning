@@ -2,9 +2,16 @@
 
 Following this: https://eliemichel.github.io/LearnWebGPU/
 
+
+19.12.23 - first triangle
 ![triangle](screenshots/1_triangle.png)
 
+
+20.12.23 - textured quad
 ![textured_quad](screenshots/2_textured_quad.png)
+
+20.01.24 - model
+![model](screenshots/3_model.png)
 
 Expect a cute animated cat to appear if successful.
 
