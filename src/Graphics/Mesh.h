@@ -15,6 +15,7 @@ struct Mesh {
         glm::vec3 normal;
         glm::vec4 tangent;
     };
+    static_assert(sizeof(Mesh::Vertex) % 4 == 0);
 
     ~Mesh();
 

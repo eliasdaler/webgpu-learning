@@ -52,7 +52,6 @@ private:
     wgpu::Queue queue;
 
     wgpu::ShaderModule shaderModule;
-    wgpu::BindGroupLayout bindGroupLayout;
     wgpu::BindGroup bindGroup;
     wgpu::RenderPipeline pipeline;
 
@@ -71,7 +70,6 @@ private:
     wgpu::Texture texture;
 
     wgpu::ShaderModule spriteShaderModule;
-    wgpu::BindGroupLayout spriteBindGroupLayout;
     wgpu::BindGroup spriteBindGroup;
     wgpu::RenderPipeline spritePipeline;
 

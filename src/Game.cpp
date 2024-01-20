@@ -145,20 +145,20 @@ void Game::init()
 
     util::initWebGPU();
 
-    wgpu::InstanceDescriptor instanceDesc{};
+    const wgpu::InstanceDescriptor instanceDesc{};
     instance = wgpu::CreateInstance(&instanceDesc);
     if (!instance) {
         std::cerr << "Could not initialize WebGPU!\n";
         std::exit(1);
     }
 
-    wgpu::RequestAdapterOptions adapterOpts{};
+    const wgpu::RequestAdapterOptions adapterOpts{};
     adapter = util::requestAdapter(instance, &adapterOpts);
 
     wgpu::SupportedLimits supportedLimits{};
     adapter.GetLimits(&supportedLimits);
 
-    wgpu::RequiredLimits requiredLimits{
+    const wgpu::RequiredLimits requiredLimits{
         .limits =
             {
                 // .minUniformBufferOffsetAlignment = 256,
@@ -192,7 +192,7 @@ void Game::init()
 
     surface = std::make_unique<wgpu::Surface>(SDL_GetWGPUSurface(instance, window));
 
-    wgpu::DeviceDescriptor deviceDesc{
+    const wgpu::DeviceDescriptor deviceDesc{
         .label = "Device",
         .requiredLimits = &requiredLimits,
     };
@@ -238,7 +238,7 @@ void Game::init()
     initCamera();
 
     { // uniform buffer
-        wgpu::BufferDescriptor bufferDesc{
+        const wgpu::BufferDescriptor bufferDesc{
             .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Uniform,
             .size = sizeof(UniformData),
             .mappedAtCreation = false,
@@ -246,7 +246,7 @@ void Game::init()
 
         uniformBuffer = device.CreateBuffer(&bufferDesc);
 
-        UniformData ud{
+        const UniformData ud{
             .viewProj = cameraProj * cameraView,
             .model = glm::mat4(1.f),
         };
@@ -264,8 +264,9 @@ void Game::initModelStuff()
         shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
         shaderCodeDesc.code = shaderSource;
 
-        wgpu::ShaderModuleDescriptor shaderDesc{};
-        shaderDesc.nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&shaderCodeDesc);
+        const wgpu::ShaderModuleDescriptor shaderDesc{
+            .nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&shaderCodeDesc),
+        };
 
         shaderModule = device.CreateShaderModule(&shaderDesc);
     }
@@ -278,7 +279,7 @@ void Game::initModelStuff()
     std::cout << "num vertices:" << mesh.vertices.size() << std::endl;
 
     { // load diffuse texture
-        ImageData data = util::loadImage(mesh.diffuseTexturePath);
+        const ImageData data = util::loadImage(mesh.diffuseTexturePath);
         assert(data.pixels != nullptr);
         assert(data.channels == 4);
 
@@ -341,9 +342,10 @@ void Game::initModelStuff()
         depthTextureView = depthTexture.CreateView(&textureViewDesc);
     }
 
+    wgpu::BindGroupLayout bindGroupLayout;
     { // create bind group
-        const std::array<wgpu::BindGroupLayoutEntry, 2> bindingLayoutEntries{
-            wgpu::BindGroupLayoutEntry{
+        const std::array<wgpu::BindGroupLayoutEntry, 2> bindingLayoutEntries{{
+            {
                 .binding = 0,
                 .visibility = wgpu::ShaderStage::Vertex,
                 .buffer =
@@ -360,7 +362,7 @@ void Game::initModelStuff()
                         .viewDimension = wgpu::TextureViewDimension::e2D,
                     },
             },
-        };
+        }};
 
         const wgpu::BindGroupLayoutDescriptor bindGroupLayoutDesc{
             .entryCount = bindingLayoutEntries.size(),
@@ -388,7 +390,7 @@ void Game::initModelStuff()
                  .binding = 1,
                  .textureView = textureView,
              }}};
-        wgpu::BindGroupDescriptor bindGroupDesc{
+        const wgpu::BindGroupDescriptor bindGroupDesc{
             .layout = bindGroupLayout.Get(),
             .entryCount = bindings.size(),
             .entries = bindings.data(),
@@ -398,7 +400,7 @@ void Game::initModelStuff()
     }
 
     { // vertex buffer
-        wgpu::BufferDescriptor bufferDesc{
+        const wgpu::BufferDescriptor bufferDesc{
             .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Vertex,
             .size = mesh.vertices.size() * sizeof(Mesh::Vertex),
             .mappedAtCreation = false,
@@ -412,7 +414,7 @@ void Game::initModelStuff()
     { // index buffer
         util::insertFakeTriangleIfNeeded(mesh.indices);
 
-        wgpu::BufferDescriptor bufferDesc{
+        const wgpu::BufferDescriptor bufferDesc{
             .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Index,
             .size = mesh.indices.size() * sizeof(std::uint16_t),
             .mappedAtCreation = false,
@@ -433,7 +435,7 @@ void Game::initModelStuff()
             .cullMode = wgpu::CullMode::Back,
         };
 
-        auto depthStencilState = wgpu::DepthStencilState{
+        const auto depthStencilState = wgpu::DepthStencilState{
             .format = depthTextureFormat,
             .depthWriteEnabled = true,
             .depthCompare = wgpu::CompareFunction::Less,
@@ -499,13 +501,13 @@ void Game::initModelStuff()
                 .dstFactor = wgpu::BlendFactor::One,
             }};
 
-        wgpu::ColorTargetState colorTarget = {
+        const wgpu::ColorTargetState colorTarget = {
             .format = swapChainFormat,
             .blend = &blendState,
             .writeMask = wgpu::ColorWriteMask::All,
         };
 
-        wgpu::FragmentState fragmentState = {
+        const wgpu::FragmentState fragmentState = {
             .module = shaderModule,
             .entryPoint = "fs_main",
             .targetCount = 1,
@@ -517,7 +519,7 @@ void Game::initModelStuff()
         pipelineDesc.multisample.mask = ~0u;
         pipelineDesc.multisample.alphaToCoverageEnabled = false;
 
-        wgpu::PipelineLayoutDescriptor layoutDesc{
+        const wgpu::PipelineLayoutDescriptor layoutDesc{
             .bindGroupLayoutCount = 1,
             .bindGroupLayouts = &bindGroupLayout,
         };
@@ -573,6 +575,7 @@ void Game::initSpriteStuff()
             .WriteTexture(&destination, (void*)data.pixels, pixelsSize, &source, &textureDesc.size);
     }
 
+    wgpu::BindGroupLayout bindGroupLayout;
     {
         const std::array<wgpu::BindGroupLayoutEntry, 1> bindingLayoutEntries{{
             {
@@ -590,7 +593,7 @@ void Game::initSpriteStuff()
             .entryCount = bindingLayoutEntries.size(),
             .entries = bindingLayoutEntries.data(),
         };
-        spriteBindGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
+        bindGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
 
         const wgpu::TextureViewDescriptor textureViewDesc{
             .format = wgpu::TextureFormat::RGBA8UnormSrgb,
@@ -607,8 +610,8 @@ void Game::initSpriteStuff()
             .binding = 0,
             .textureView = textureView,
         }};
-        wgpu::BindGroupDescriptor bindGroupDesc{
-            .layout = spriteBindGroupLayout.Get(),
+        const wgpu::BindGroupDescriptor bindGroupDesc{
+            .layout = bindGroupLayout.Get(),
             .entryCount = bindings.size(),
             .entries = bindings.data(),
         };
@@ -670,13 +673,13 @@ void Game::initSpriteStuff()
                 .dstFactor = wgpu::BlendFactor::One,
             }};
 
-        wgpu::ColorTargetState colorTarget = {
+        const wgpu::ColorTargetState colorTarget = {
             .format = swapChainFormat,
             .blend = &blendState,
             .writeMask = wgpu::ColorWriteMask::All,
         };
 
-        wgpu::FragmentState fragmentState = {
+        const wgpu::FragmentState fragmentState = {
             .module = spriteShaderModule,
             .entryPoint = "fs_main",
             .targetCount = 1,
@@ -690,7 +693,7 @@ void Game::initSpriteStuff()
 
         wgpu::PipelineLayoutDescriptor layoutDesc{
             .bindGroupLayoutCount = 1,
-            .bindGroupLayouts = &spriteBindGroupLayout,
+            .bindGroupLayouts = &bindGroupLayout,
         };
         pipelineDesc.layout = device.CreatePipelineLayout(&layoutDesc);
 
@@ -698,7 +701,7 @@ void Game::initSpriteStuff()
     }
 
     { // vertex buffer
-        wgpu::BufferDescriptor bufferDesc{
+        const wgpu::BufferDescriptor bufferDesc{
             .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Vertex,
             .size = pointData.size() * sizeof(float),
             .mappedAtCreation = false,
@@ -710,7 +713,7 @@ void Game::initSpriteStuff()
     }
 
     { // index buffer
-        wgpu::BufferDescriptor bufferDesc{
+        const wgpu::BufferDescriptor bufferDesc{
             .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Index,
             .size = indexData.size() * sizeof(std::uint16_t),
             .mappedAtCreation = false,
@@ -814,7 +817,6 @@ void Game::render()
     const wgpu::CommandEncoderDescriptor commandEncoderDesc{};
     const auto encoder = device.CreateCommandEncoder(&commandEncoderDesc);
 
-#if 1
     const wgpu::RenderPassColorAttachment noDepthRenderPassColorAttachment = {
         .view = nextFrameTexture,
         .loadOp = wgpu::LoadOp::Clear,
@@ -838,7 +840,6 @@ void Game::render()
         noDepthRenderPass.DrawIndexed(indexCount, 1, 0, 0, 0);
     }
     noDepthRenderPass.End();
-#endif
 
     const wgpu::RenderPassColorAttachment renderPassColorAttachment = {
         .view = nextFrameTexture,
