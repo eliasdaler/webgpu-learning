@@ -342,7 +342,7 @@ void Game::initModelStuff()
     }
 
     { // create bind group
-        const std::vector<wgpu::BindGroupLayoutEntry> bindingLayoutEntries{
+        const std::array<wgpu::BindGroupLayoutEntry, 2> bindingLayoutEntries{
             wgpu::BindGroupLayoutEntry{
                 .binding = 0,
                 .visibility = wgpu::ShaderStage::Vertex,
@@ -379,15 +379,15 @@ void Game::initModelStuff()
         };
         const auto textureView = texture.CreateView(&textureViewDesc);
 
-        const std::vector<wgpu::BindGroupEntry> bindings{
-            {
-                .binding = 0,
-                .buffer = uniformBuffer,
-            },
-            {
-                .binding = 1,
-                .textureView = textureView,
-            }};
+        const std::array<wgpu::BindGroupEntry, 2> bindings{
+            {{
+                 .binding = 0,
+                 .buffer = uniformBuffer,
+             },
+             {
+                 .binding = 1,
+                 .textureView = textureView,
+             }}};
         wgpu::BindGroupDescriptor bindGroupDesc{
             .layout = bindGroupLayout.Get(),
             .entryCount = bindings.size(),
@@ -444,7 +444,7 @@ void Game::initModelStuff()
         pipelineDesc.depthStencil = &depthStencilState;
 
         // vertex
-        const std::vector<wgpu::VertexAttribute> vertexAttribs{
+        const std::array<wgpu::VertexAttribute, 4> vertexAttribs{{
             {
                 // position
                 .format = wgpu::VertexFormat::Float32x3,
@@ -469,7 +469,7 @@ void Game::initModelStuff()
                 .offset = offsetof(Mesh::Vertex, tangent),
                 .shaderLocation = 3,
             },
-        };
+        }};
 
         const wgpu::VertexBufferLayout vertexBufferLayout{
             .arrayStride = sizeof(Mesh::Vertex),
@@ -574,7 +574,7 @@ void Game::initSpriteStuff()
     }
 
     {
-        const std::vector<wgpu::BindGroupLayoutEntry> bindingLayoutEntries{
+        const std::array<wgpu::BindGroupLayoutEntry, 1> bindingLayoutEntries{{
             {
                 .binding = 0,
                 .visibility = wgpu::ShaderStage::Fragment,
@@ -584,7 +584,7 @@ void Game::initSpriteStuff()
                         .viewDimension = wgpu::TextureViewDimension::e2D,
                     },
             },
-        };
+        }};
 
         const wgpu::BindGroupLayoutDescriptor bindGroupLayoutDesc{
             .entryCount = bindingLayoutEntries.size(),
@@ -603,7 +603,7 @@ void Game::initSpriteStuff()
         };
         const auto textureView = spriteTexture.CreateView(&textureViewDesc);
 
-        const std::vector<wgpu::BindGroupEntry> bindings{{
+        const std::array<wgpu::BindGroupEntry, 1> bindings{wgpu::BindGroupEntry{
             .binding = 0,
             .textureView = textureView,
         }};
@@ -627,7 +627,7 @@ void Game::initSpriteStuff()
         };
 
         // vertex
-        const std::vector<wgpu::VertexAttribute> vertexAttribs{
+        const std::array<wgpu::VertexAttribute, 2> vertexAttribs{{
             {
                 // position
                 .format = wgpu::VertexFormat::Float32x2,
@@ -640,7 +640,7 @@ void Game::initSpriteStuff()
                 .offset = 2 * sizeof(float),
                 .shaderLocation = 1,
             },
-        };
+        }};
 
         const wgpu::VertexBufferLayout vertexBufferLayout{
             .arrayStride = 4 * sizeof(float),
