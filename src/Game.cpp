@@ -104,6 +104,9 @@ std::vector<std::uint16_t> indexData = {
     0,
     1,
     2, // Triangle #0
+    2,
+    3,
+    0, // Triangle #1
 };
 
 int indexCount = static_cast<int>(indexData.size());
