@@ -410,12 +410,7 @@ void Game::initModelStuff()
     }
 
     { // index buffer
-        // TEMP HACK: for some reason I can only draw even amount of triangles...
-        const auto oldIndices = mesh.indices;
-        mesh.indices.clear();
-        for (int i = 0; i < 3 * 446; ++i) {
-            mesh.indices.push_back(oldIndices[i]);
-        }
+        util::insertFakeTriangleIfNeeded(mesh.indices);
 
         wgpu::BufferDescriptor bufferDesc{
             .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Index,

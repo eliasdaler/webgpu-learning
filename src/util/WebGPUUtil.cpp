@@ -5,6 +5,8 @@
 #include <dawn/dawn_proc.h>
 #include <dawn/native/DawnNative.h>
 
+#include <cassert>
+
 namespace util
 {
 
@@ -31,11 +33,10 @@ wgpu::Adapter requestAdapter(
 
     wgpu::Adapter adapter;
     instance.RequestAdapter(options, onAdapterRequestEnded, (void*)&adapter);
-
     return adapter;
 }
 
-wgpu::Device requestDevice(wgpu::Adapter adapter, wgpu::DeviceDescriptor const* descriptor)
+wgpu::Device requestDevice(const wgpu::Adapter& adapter, wgpu::DeviceDescriptor const* descriptor)
 {
     auto onDeviceRequestEnded = [](WGPURequestDeviceStatus status,
                                    WGPUDevice device,
@@ -51,6 +52,16 @@ wgpu::Device requestDevice(wgpu::Adapter adapter, wgpu::DeviceDescriptor const* 
     wgpu::Device device;
     adapter.RequestDevice(descriptor, onDeviceRequestEnded, (void*)&device);
     return device;
+}
+
+void insertFakeTriangleIfNeeded(std::vector<std::uint16_t>& indices)
+{
+    assert(indices.size() % 3 == 0 && "Number of indices not divisible by 3");
+    if (indices.size() % 6 != 0) {
+        for (int i = 0; i < 3; ++i) {
+            indices.push_back(0);
+        }
+    }
 }
 
 } // end of namespace util
