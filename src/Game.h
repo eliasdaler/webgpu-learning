@@ -53,6 +53,10 @@ private:
     wgpu::BindGroup bindGroup;
     wgpu::RenderPipeline pipeline;
 
+    wgpu::TextureFormat depthTextureFormat{wgpu::TextureFormat::Depth24Plus};
+    wgpu::Texture depthTexture;
+    wgpu::TextureView depthTextureView;
+
     wgpu::Buffer vertexBuffer;
     wgpu::Buffer indexBuffer;
     wgpu::Texture texture;

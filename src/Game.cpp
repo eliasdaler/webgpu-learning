@@ -36,7 +36,7 @@ struct VertexOutput {
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    out.position = vec4f(in.position, 1.0);
+    out.position = vec4f(in.position.x, in.position.y, in.position.z * 0.5 + 0.5, 1.0);
     out.uv = in.uv;
     return out;
 }
@@ -283,6 +283,36 @@ void Game::initModelStuff()
             .WriteTexture(&destination, (void*)data.pixels, pixelsSize, &source, &textureDesc.size);
     }
 
+    { // create depth dexture
+        const wgpu::TextureDescriptor textureDesc{
+            .usage = wgpu::TextureUsage::RenderAttachment,
+            .dimension = wgpu::TextureDimension::e2D,
+            .size =
+                {
+                    .width = static_cast<std::uint32_t>(params.screenWidth),
+                    .height = static_cast<std::uint32_t>(params.screenHeight),
+                    .depthOrArrayLayers = 1,
+                },
+            .format = depthTextureFormat,
+            .mipLevelCount = 1,
+            .sampleCount = 1,
+        };
+        depthTexture = device.CreateTexture(&textureDesc);
+    }
+
+    { // create depth texture view
+        const wgpu::TextureViewDescriptor textureViewDesc{
+            .format = depthTextureFormat,
+            .dimension = wgpu::TextureViewDimension::e2D,
+            .baseMipLevel = 0,
+            .mipLevelCount = 1,
+            .baseArrayLayer = 0,
+            .arrayLayerCount = 1,
+            .aspect = wgpu::TextureAspect::DepthOnly,
+        };
+        depthTextureView = depthTexture.CreateView(&textureViewDesc);
+    }
+
     { // create bind group
         const std::vector<wgpu::BindGroupLayoutEntry> bindingLayoutEntries{
             {
@@ -366,6 +396,16 @@ void Game::initModelStuff()
             .frontFace = wgpu::FrontFace::CCW,
             .cullMode = wgpu::CullMode::Back,
         };
+
+        auto depthStencilState = wgpu::DepthStencilState{
+            .format = depthTextureFormat,
+            .depthWriteEnabled = true,
+            .depthCompare = wgpu::CompareFunction::Less,
+            .stencilReadMask = 0,
+            .stencilWriteMask = 0,
+        };
+
+        pipelineDesc.depthStencil = &depthStencilState;
 
         // vertex
         const std::vector<wgpu::VertexAttribute> vertexAttribs{
@@ -716,13 +756,27 @@ void Game::render()
         .clearValue = clearColor,
     };
 
+    const wgpu::RenderPassDepthStencilAttachment depthStencilAttachment = {
+        .view = depthTextureView,
+        .depthLoadOp = wgpu::LoadOp::Clear,
+        .depthStoreOp = wgpu::StoreOp::Store,
+        .depthClearValue = 1.f,
+        .depthReadOnly = false,
+        .stencilLoadOp = wgpu::LoadOp::Undefined,
+        .stencilStoreOp = wgpu::StoreOp::Undefined,
+        .stencilClearValue = 0,
+        .stencilReadOnly = true,
+    };
+
     const wgpu::RenderPassDescriptor renderPassDesc = {
         .colorAttachmentCount = 1,
         .colorAttachments = &renderPassColorAttachment,
+        .depthStencilAttachment = &depthStencilAttachment,
     };
 
     const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
 
+#if 0
     { // draw sprite
         renderPass.SetPipeline(spritePipeline);
         renderPass.SetBindGroup(0, spriteBindGroup, 0, nullptr);
@@ -731,6 +785,7 @@ void Game::render()
             spriteIndexBuffer, wgpu::IndexFormat::Uint16, 0, indexCount * sizeof(std::uint16_t));
         renderPass.DrawIndexed(indexCount, 1, 0, 0, 0);
     }
+#endif
 
     { // draw mesh
         auto& mesh = model.meshes[0];
