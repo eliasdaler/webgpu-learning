@@ -46,7 +46,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     // uv has origin at bottom left
     var uv_c = in.uv;
-    uv_c.y = 1 - uv_c.y;
+    // uv_c.y = 1 - uv_c.y;
 
     let coord = vec2i(uv_c * vec2f(textureDimensions(texture)));
     let textureColor = textureLoad(texture, coord, 0).rgb;
@@ -104,9 +104,6 @@ std::vector<std::uint16_t> indexData = {
     0,
     1,
     2, // Triangle #0
-    0,
-    2,
-    3 // Triangle #1
 };
 
 int indexCount = static_cast<int>(indexData.size());
@@ -152,8 +149,8 @@ void Game::init()
         .limits =
             {
                 // .minUniformBufferOffsetAlignment = 256,
-                .minStorageBufferOffsetAlignment =
-                    supportedLimits.limits.minStorageBufferOffsetAlignment,
+                // .minStorageBufferOffsetAlignment =
+                //     supportedLimits.limits.minStorageBufferOffsetAlignment,
                 // .maxVertexAttributes = 8,
                 // .maxInterStageShaderComponents = 3,
             },
@@ -339,6 +336,13 @@ void Game::initModelStuff()
     }
 
     { // index buffer
+        // TEMP HACK: for some reason I can only draw even amount of triangles...
+        const auto oldIndices = mesh.indices;
+        mesh.indices.clear();
+        for (int i = 0; i < 3 * 446; ++i) {
+            mesh.indices.push_back(oldIndices[i]);
+        }
+
         wgpu::BufferDescriptor bufferDesc{
             .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Index,
             .size = mesh.indices.size() * sizeof(std::uint16_t),
@@ -357,7 +361,7 @@ void Game::initModelStuff()
             .topology = wgpu::PrimitiveTopology::TriangleList,
             .stripIndexFormat = wgpu::IndexFormat::Undefined,
             .frontFace = wgpu::FrontFace::CCW,
-            .cullMode = wgpu::CullMode::None,
+            .cullMode = wgpu::CullMode::Back,
         };
 
         // vertex
@@ -716,6 +720,15 @@ void Game::render()
 
     const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
 
+    { // draw sprite
+        renderPass.SetPipeline(spritePipeline);
+        renderPass.SetBindGroup(0, spriteBindGroup, 0, nullptr);
+        renderPass.SetVertexBuffer(0, spriteVertexBuffer, 0, pointData.size() * sizeof(float));
+        renderPass.SetIndexBuffer(
+            spriteIndexBuffer, wgpu::IndexFormat::Uint16, 0, indexCount * sizeof(std::uint16_t));
+        renderPass.DrawIndexed(indexCount, 1, 0, 0, 0);
+    }
+
     { // draw mesh
         auto& mesh = model.meshes[0];
 
@@ -725,15 +738,6 @@ void Game::render()
         renderPass.SetIndexBuffer(
             indexBuffer, wgpu::IndexFormat::Uint16, 0, mesh.indices.size() * sizeof(std::uint16_t));
         renderPass.DrawIndexed(mesh.indices.size(), 1, 0, 0, 0);
-    }
-
-    { // draw sprite
-        renderPass.SetPipeline(spritePipeline);
-        renderPass.SetBindGroup(0, spriteBindGroup, 0, nullptr);
-        renderPass.SetVertexBuffer(0, spriteVertexBuffer, 0, pointData.size() * sizeof(float));
-        renderPass.SetIndexBuffer(
-            spriteIndexBuffer, wgpu::IndexFormat::Uint16, 0, indexCount * sizeof(std::uint16_t));
-        renderPass.DrawIndexed(indexCount, 1, 0, 0, 0);
     }
 
     renderPass.End();
