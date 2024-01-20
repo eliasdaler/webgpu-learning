@@ -27,6 +27,7 @@ private:
     void init();
     void initModelStuff();
     void initSpriteStuff();
+    void initCamera();
 
     void loop();
     void update(float dt);
@@ -53,6 +54,12 @@ private:
     wgpu::BindGroup bindGroup;
     wgpu::RenderPipeline pipeline;
 
+    struct UniformData {
+        glm::mat4 viewProj;
+        glm::mat4 model;
+    };
+    wgpu::Buffer uniformBuffer;
+
     wgpu::TextureFormat depthTextureFormat{wgpu::TextureFormat::Depth24Plus};
     wgpu::Texture depthTexture;
     wgpu::TextureView depthTextureView;
@@ -73,4 +80,11 @@ private:
     wgpu::Surface surface;
 
     Model model;
+
+    glm::vec3 cameraPos;
+    glm::vec3 cameraDirection;
+    glm::mat4 cameraView;
+    glm::mat4 cameraProj;
+
+    float meshRotationAngle{0.f};
 };

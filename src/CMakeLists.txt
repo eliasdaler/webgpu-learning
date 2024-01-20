@@ -83,4 +83,5 @@ target_compile_definitions(game
     GLM_FORCE_CTOR_INIT
     GLM_FORCE_XYZW_ONLY
     GLM_FORCE_EXPLICIT_CTOR
+    GLM_FORCE_DEPTH_ZERO_TO_ONE
 )

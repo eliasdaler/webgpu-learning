@@ -31,12 +31,26 @@ struct VertexOutput {
     @location(0) uv: vec2f,
 };
 
-@group(0) @binding(0) var texture: texture_2d<f32>;
+struct Uniforms {
+    viewProj: mat4x4f,
+    model: mat4x4f,
+};
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@group(0) @binding(1) var texture: texture_2d<f32>;
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    out.position = vec4f(in.position.x, in.position.y, in.position.z * 0.5 + 0.5, 1.0);
+
+    var position = uniforms.viewProj * uniforms.model * vec4(in.position, 1.0);
+    // var position = uniforms.model * vec4(in.position, 1.0);
+
+    // todo: this will probably be fixed by passing a proper viewProj matrix?
+    // position.z = -position.z * 0.5 + 0.5;
+
+    out.position = position;
+
     out.uv = in.uv;
     return out;
 }
@@ -225,6 +239,24 @@ void Game::init()
             std::make_unique<wgpu::SwapChain>(device.CreateSwapChain(surface, &swapChainDesc));
     }
 
+    initCamera();
+
+    { // uniform buffer
+        wgpu::BufferDescriptor bufferDesc{
+            .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Uniform,
+            .size = sizeof(UniformData),
+            .mappedAtCreation = false,
+        };
+
+        uniformBuffer = device.CreateBuffer(&bufferDesc);
+
+        UniformData ud{
+            .viewProj = cameraProj * cameraView,
+            .model = glm::mat4(1.f),
+        };
+        queue.WriteBuffer(uniformBuffer, 0, &ud, sizeof(UniformData));
+    }
+
     initModelStuff();
     initSpriteStuff();
 }
@@ -315,8 +347,16 @@ void Game::initModelStuff()
 
     { // create bind group
         const std::vector<wgpu::BindGroupLayoutEntry> bindingLayoutEntries{
-            {
+            wgpu::BindGroupLayoutEntry{
                 .binding = 0,
+                .visibility = wgpu::ShaderStage::Vertex,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::Uniform,
+                    },
+            },
+            {
+                .binding = 1,
                 .visibility = wgpu::ShaderStage::Fragment,
                 .texture =
                     {
@@ -343,10 +383,15 @@ void Game::initModelStuff()
         };
         const auto textureView = texture.CreateView(&textureViewDesc);
 
-        const std::vector<wgpu::BindGroupEntry> bindings{{
-            .binding = 0,
-            .textureView = textureView,
-        }};
+        const std::vector<wgpu::BindGroupEntry> bindings{
+            {
+                .binding = 0,
+                .buffer = uniformBuffer,
+            },
+            {
+                .binding = 1,
+                .textureView = textureView,
+            }};
         wgpu::BindGroupDescriptor bindGroupDesc{
             .layout = bindGroupLayout.Get(),
             .entryCount = bindings.size(),
@@ -686,6 +731,23 @@ void Game::initSpriteStuff()
     }
 }
 
+void Game::initCamera()
+{
+    cameraPos = glm::vec3(0.0f, 1.0f, 3.0f);
+    glm::vec3 cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
+    cameraDirection = glm::normalize(cameraPos - cameraTarget);
+
+    glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
+    glm::vec3 cameraRight = glm::normalize(glm::cross(up, cameraDirection));
+    glm::vec3 cameraUp = glm::cross(cameraDirection, cameraRight);
+
+    cameraView = glm::lookAt(cameraPos, glm::vec3(0.0f, 0.0f, 0.0f), cameraUp);
+
+    const auto fov = 45.f;
+    const auto aspect = (float)params.screenWidth / (float)params.screenHeight;
+    cameraProj = glm::perspective(glm::radians(fov), aspect, 0.1f, 100.0f);
+}
+
 void Game::loop()
 {
     // Fix your timestep! game loop
@@ -733,7 +795,19 @@ void Game::loop()
 }
 
 void Game::update(float dt)
-{}
+{
+    meshRotationAngle += 0.5f * dt;
+
+    glm::mat4 meshTransform{1.f};
+    meshTransform = glm::rotate(meshTransform, meshRotationAngle, glm::vec3{0.f, 1.f, 0.f});
+
+    UniformData ud{
+        .viewProj = cameraProj * cameraView,
+        .model = meshTransform,
+    };
+
+    queue.WriteBuffer(uniformBuffer, 0, &ud, sizeof(UniformData));
+}
 
 void Game::render()
 {
@@ -749,6 +823,7 @@ void Game::render()
     const wgpu::CommandEncoderDescriptor commandEncoderDesc{};
     const auto encoder = device.CreateCommandEncoder(&commandEncoderDesc);
 
+#if 1
     const wgpu::RenderPassColorAttachment noDepthRenderPassColorAttachment = {
         .view = nextFrameTexture,
         .loadOp = wgpu::LoadOp::Clear,
@@ -772,6 +847,7 @@ void Game::render()
         noDepthRenderPass.DrawIndexed(indexCount, 1, 0, 0, 0);
     }
     noDepthRenderPass.End();
+#endif
 
     const wgpu::RenderPassColorAttachment renderPassColorAttachment = {
         .view = nextFrameTexture,
