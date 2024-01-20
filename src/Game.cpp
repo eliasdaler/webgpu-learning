@@ -740,18 +740,42 @@ void Game::render()
     // cornflower blue <3
     static const wgpu::Color clearColor{100.f / 255.f, 149.f / 255.f, 237.f / 255.f, 255.f / 255.f};
 
-    auto nextFrameTexture = swapChain->GetCurrentTextureView();
+    const auto nextFrameTexture = swapChain->GetCurrentTextureView();
     if (!nextFrameTexture) {
         std::cerr << "Cannot acquire next swap chain texture" << std::endl;
         return;
     }
 
-    wgpu::CommandEncoderDescriptor commandEncoderDesc{};
+    const wgpu::CommandEncoderDescriptor commandEncoderDesc{};
     const auto encoder = device.CreateCommandEncoder(&commandEncoderDesc);
+
+    const wgpu::RenderPassColorAttachment noDepthRenderPassColorAttachment = {
+        .view = nextFrameTexture,
+        .loadOp = wgpu::LoadOp::Clear,
+        .storeOp = wgpu::StoreOp::Store,
+        .clearValue = clearColor,
+    };
+
+    const wgpu::RenderPassDescriptor noDepthRenderPassDesc = {
+        .colorAttachmentCount = 1,
+        .colorAttachments = &noDepthRenderPassColorAttachment,
+    };
+
+    const auto noDepthRenderPass = encoder.BeginRenderPass(&noDepthRenderPassDesc);
+    { // draw sprite
+        noDepthRenderPass.SetPipeline(spritePipeline);
+        noDepthRenderPass.SetBindGroup(0, spriteBindGroup, 0, nullptr);
+        noDepthRenderPass
+            .SetVertexBuffer(0, spriteVertexBuffer, 0, pointData.size() * sizeof(float));
+        noDepthRenderPass.SetIndexBuffer(
+            spriteIndexBuffer, wgpu::IndexFormat::Uint16, 0, indexCount * sizeof(std::uint16_t));
+        noDepthRenderPass.DrawIndexed(indexCount, 1, 0, 0, 0);
+    }
+    noDepthRenderPass.End();
 
     const wgpu::RenderPassColorAttachment renderPassColorAttachment = {
         .view = nextFrameTexture,
-        .loadOp = wgpu::LoadOp::Clear,
+        .loadOp = wgpu::LoadOp::Load,
         .storeOp = wgpu::StoreOp::Store,
         .clearValue = clearColor,
     };
@@ -775,18 +799,6 @@ void Game::render()
     };
 
     const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
-
-#if 0
-    { // draw sprite
-        renderPass.SetPipeline(spritePipeline);
-        renderPass.SetBindGroup(0, spriteBindGroup, 0, nullptr);
-        renderPass.SetVertexBuffer(0, spriteVertexBuffer, 0, pointData.size() * sizeof(float));
-        renderPass.SetIndexBuffer(
-            spriteIndexBuffer, wgpu::IndexFormat::Uint16, 0, indexCount * sizeof(std::uint16_t));
-        renderPass.DrawIndexed(indexCount, 1, 0, 0, 0);
-    }
-#endif
-
     { // draw mesh
         auto& mesh = model.meshes[0];
 
@@ -797,11 +809,10 @@ void Game::render()
             indexBuffer, wgpu::IndexFormat::Uint16, 0, mesh.indices.size() * sizeof(std::uint16_t));
         renderPass.DrawIndexed(mesh.indices.size(), 1, 0, 0, 0);
     }
-
     renderPass.End();
 
     // submit
-    wgpu::CommandBufferDescriptor cmdBufferDescriptor{};
+    const wgpu::CommandBufferDescriptor cmdBufferDescriptor{};
     const auto command = encoder.Finish(&cmdBufferDescriptor);
     queue.Submit(1, &command);
 
