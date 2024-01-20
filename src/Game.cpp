@@ -190,7 +190,7 @@ void Game::init()
         std::exit(1);
     }
 
-    surface = SDL_GetWGPUSurface(instance, window);
+    surface = std::make_unique<wgpu::Surface>(SDL_GetWGPUSurface(instance, window));
 
     wgpu::DeviceDescriptor deviceDesc{
         .label = "Device",
@@ -232,7 +232,7 @@ void Game::init()
         };
 
         swapChain =
-            std::make_unique<wgpu::SwapChain>(device.CreateSwapChain(surface, &swapChainDesc));
+            std::make_unique<wgpu::SwapChain>(device.CreateSwapChain(*surface, &swapChainDesc));
     }
 
     initCamera();
@@ -895,7 +895,7 @@ void Game::quit()
 void Game::cleanup()
 {
     swapChain.reset();
-    SDL_DestroyWindow(window);
-
-    SDL_Quit();
+    surface.reset();
+    // FIXME: SDL_Quit crashes for some reason, find out why
+    // SDL_Quit();
 }

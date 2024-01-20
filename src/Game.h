@@ -45,7 +45,9 @@ private:
     wgpu::Adapter adapter;
     wgpu::Device device;
 
+    std::unique_ptr<wgpu::Surface> surface;
     std::unique_ptr<wgpu::SwapChain> swapChain;
+
     wgpu::TextureFormat swapChainFormat;
     wgpu::Queue queue;
 
@@ -76,8 +78,6 @@ private:
     wgpu::Buffer spriteVertexBuffer;
     wgpu::Buffer spriteIndexBuffer;
     wgpu::Texture spriteTexture;
-
-    wgpu::Surface surface;
 
     Model model;
 
