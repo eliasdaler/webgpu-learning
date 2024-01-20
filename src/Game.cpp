@@ -1,5 +1,6 @@
 #include "Game.h"
 
+#include "util/GltfLoader.h"
 #include "util/ImageLoader.h"
 #include "util/OSUtil.h"
 #include "util/SDLWebGPU.h"
@@ -378,6 +379,12 @@ void Game::init()
 
         queue.WriteBuffer(indexBuffer, 0, indexData.data(), bufferDesc.size);
     }
+
+    model = util::loadModel("assets/models/yae.gltf");
+    // let's assume one mesh for now
+    assert(model.meshes.size() == 1);
+    auto& mesh = model.meshes[0];
+    std::cout << "num vertices:" << mesh.vertices.size() << std::endl;
 }
 
 void Game::loop()

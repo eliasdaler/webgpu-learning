@@ -5,6 +5,8 @@
 
 #include <webgpu/webgpu_cpp.h>
 
+#include <Graphics/Model.h>
+
 struct SDL_Window;
 
 class Game {
@@ -54,4 +56,6 @@ private:
 
     wgpu::BindGroupLayout bindGroupLayout;
     wgpu::BindGroup bindGroup;
+
+    Model model;
 };

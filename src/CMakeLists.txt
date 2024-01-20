@@ -1,8 +1,11 @@
 add_executable(game
-  util/OSUtil.cpp
-  util/WebGPUUtil.cpp
-  util/SDLWebGPU.cpp
+  Graphics/Mesh.cpp
+
+  util/GltfLoader.cpp
   util/ImageLoader.cpp
+  util/OSUtil.cpp
+  util/SDLWebGPU.cpp
+  util/WebGPUUtil.cpp
 
   Game.cpp
   main.cpp
@@ -68,4 +71,16 @@ set(DAWN_TARGETS
 
 target_link_libraries(game PRIVATE
     ${DAWN_TARGETS}
+)
+
+target_link_libraries(game PRIVATE
+  glm::glm
+  tinygltf::tinygltf
+)
+
+target_compile_definitions(game
+  PUBLIC
+    GLM_FORCE_CTOR_INIT
+    GLM_FORCE_XYZW_ONLY
+    GLM_FORCE_EXPLICIT_CTOR
 )
