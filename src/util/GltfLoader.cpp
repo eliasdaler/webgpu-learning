@@ -127,7 +127,7 @@ Mesh loadMesh(
     mesh.name = meshName;
 
     if (primitive.material != -1) {
-        mesh.materialPath = getDiffuseTexturePath(model, model.materials[primitive.material]);
+        mesh.diffuseTexturePath = getDiffuseTexturePath(model, model.materials[primitive.material]);
     }
 
     if (primitive.indices != -1) { // load indices

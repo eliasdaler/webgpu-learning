@@ -23,12 +23,6 @@ struct Mesh {
     std::vector<Vertex> vertices;
     std::vector<std::uint16_t> indices;
 
-    std::string materialPath;
+    std::string diffuseTexturePath;
     std::string name;
-
-    std::uint32_t vao;
-    std::uint32_t vbo;
-    std::uint32_t ebo;
-
-    std::uint32_t diffuseTexture;
 };

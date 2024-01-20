@@ -25,6 +25,9 @@ public:
 
 private:
     void init();
+    void initModelStuff();
+    void initSpriteStuff();
+
     void loop();
     void update(float dt);
     void render();
@@ -46,16 +49,24 @@ private:
     wgpu::Queue queue;
 
     wgpu::ShaderModule shaderModule;
+    wgpu::BindGroupLayout bindGroupLayout;
+    wgpu::BindGroup bindGroup;
     wgpu::RenderPipeline pipeline;
 
     wgpu::Buffer vertexBuffer;
     wgpu::Buffer indexBuffer;
-    wgpu::Surface surface;
-
     wgpu::Texture texture;
 
-    wgpu::BindGroupLayout bindGroupLayout;
-    wgpu::BindGroup bindGroup;
+    wgpu::ShaderModule spriteShaderModule;
+    wgpu::BindGroupLayout spriteBindGroupLayout;
+    wgpu::BindGroup spriteBindGroup;
+    wgpu::RenderPipeline spritePipeline;
+
+    wgpu::Buffer spriteVertexBuffer;
+    wgpu::Buffer spriteIndexBuffer;
+    wgpu::Texture spriteTexture;
+
+    wgpu::Surface surface;
 
     Model model;
 };
