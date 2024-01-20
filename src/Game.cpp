@@ -716,7 +716,7 @@ void Game::render()
 
     const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
 
-    /* { // finally, do drawing
+    { // draw mesh
         auto& mesh = model.meshes[0];
 
         renderPass.SetPipeline(pipeline);
@@ -725,7 +725,7 @@ void Game::render()
         renderPass.SetIndexBuffer(
             indexBuffer, wgpu::IndexFormat::Uint16, 0, mesh.indices.size() * sizeof(std::uint16_t));
         renderPass.DrawIndexed(mesh.indices.size(), 1, 0, 0, 0);
-    } */
+    }
 
     { // draw sprite
         renderPass.SetPipeline(spritePipeline);
