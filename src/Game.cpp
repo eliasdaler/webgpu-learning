@@ -57,26 +57,30 @@ struct VertexOutput {
     @location(0) uv: vec2f,
 };
 
-struct Uniforms {
+struct PerFrameData {
     viewProj: mat4x4f,
+};
+
+struct MeshData {
     model: mat4x4f,
 };
 
-@group(0) @binding(0) var<uniform> uniforms: Uniforms;
-@group(0) @binding(1) var texture: texture_2d<f32>;
-@group(0) @binding(2) var texSampler: sampler;
+@group(0) @binding(0) var<uniform> fd: PerFrameData;
+@group(2) @binding(0) var<uniform> mesh: MeshData;
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
 
-    var position = uniforms.viewProj * uniforms.model * vec4(in.position, 1.0);
-
+    var position = fd.viewProj * mesh.model * vec4(in.position, 1.0);
     out.position = position;
     out.uv = in.uv;
 
     return out;
 }
+
+@group(1) @binding(0) var texture: texture_2d<f32>;
+@group(1) @binding(1) var texSampler: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
@@ -250,8 +254,6 @@ void Game::init()
             std::make_unique<wgpu::SwapChain>(device.CreateSwapChain(*surface, &swapChainDesc));
     }
 
-    device.PushErrorScope(wgpu::ErrorFilter::Validation);
-
     const auto samplerDesc = wgpu::SamplerDescriptor{
         .addressModeU = wgpu::AddressMode::Repeat,
         .addressModeV = wgpu::AddressMode::Repeat,
@@ -260,27 +262,39 @@ void Game::init()
     };
     nearestSampler = device.CreateSampler(&samplerDesc);
 
+    cameraPos = glm::vec3(0.0f, 1.0f, 3.0f);
     initCamera();
 
-    { // uniform buffer
+    { // per frame data buffer
         const auto bufferDesc = wgpu::BufferDescriptor{
             .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
-            .size = sizeof(UniformData),
+            .size = sizeof(PerFrameData),
         };
 
-        uniformBuffer = device.CreateBuffer(&bufferDesc);
+        frameDataBuffer = device.CreateBuffer(&bufferDesc);
 
-        const auto ud = UniformData{
+        const auto ud = PerFrameData{
             .viewProj = cameraProj * cameraView,
-            .model = glm::mat4(1.f),
         };
-        queue.WriteBuffer(uniformBuffer, 0, &ud, sizeof(UniformData));
+        queue.WriteBuffer(frameDataBuffer, 0, &ud, sizeof(PerFrameData));
+    }
+
+    { // mesh data buffer
+        const auto bufferDesc = wgpu::BufferDescriptor{
+            .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
+            .size = sizeof(MeshData),
+        };
+
+        meshDataBuffer = device.CreateBuffer(&bufferDesc);
+
+        const auto md = MeshData{
+            .model = glm::mat4{1.f},
+        };
+        queue.WriteBuffer(meshDataBuffer, 0, &md, sizeof(MeshData));
     }
 
     initModelStuff();
     initSpriteStuff();
-
-    device.PopErrorScope(defaultValidationErrorHandler, nullptr);
 }
 
 void Game::initModelStuff()
@@ -304,7 +318,6 @@ void Game::initModelStuff()
     // let's assume one mesh for now
     assert(model.meshes.size() == 1);
     auto& mesh = model.meshes[0];
-    std::cout << "num vertices:" << mesh.vertices.size() << std::endl;
 
     // load diffuse texture
     texture = util::
@@ -340,9 +353,9 @@ void Game::initModelStuff()
         depthTextureView = depthTexture.CreateView(&textureViewDesc);
     }
 
-    wgpu::BindGroupLayout bindGroupLayout;
-    { // create bind group
-        const std::array<wgpu::BindGroupLayoutEntry, 3> bindLayoutEntries{{
+    wgpu::BindGroupLayout perFrameDataGroupLayout;
+    { // per frame data
+        const std::array<wgpu::BindGroupLayoutEntry, 1> bindGroupLayoutEntries{{
             {
                 .binding = 0,
                 .visibility = wgpu::ShaderStage::Vertex,
@@ -351,8 +364,34 @@ void Game::initModelStuff()
                         .type = wgpu::BufferBindingType::Uniform,
                     },
             },
+        }};
+
+        const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+            .entryCount = bindGroupLayoutEntries.size(),
+            .entries = bindGroupLayoutEntries.data(),
+        };
+        perFrameDataGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
+
+        const std::array<wgpu::BindGroupEntry, 1> bindings{{
             {
-                .binding = 1,
+                .binding = 0,
+                .buffer = frameDataBuffer,
+            },
+        }};
+        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .layout = perFrameDataGroupLayout.Get(),
+            .entryCount = bindings.size(),
+            .entries = bindings.data(),
+        };
+
+        perFrameBindGroup = device.CreateBindGroup(&bindGroupDesc);
+    }
+
+    wgpu::BindGroupLayout materialGroupLayout;
+    { // material data
+        const std::array<wgpu::BindGroupLayoutEntry, 2> bindGroupLayoutEntries{{
+            {
+                .binding = 0,
                 .visibility = wgpu::ShaderStage::Fragment,
                 .texture =
                     {
@@ -361,7 +400,7 @@ void Game::initModelStuff()
                     },
             },
             {
-                .binding = 2,
+                .binding = 1,
                 .visibility = wgpu::ShaderStage::Fragment,
                 .sampler =
                     {
@@ -371,10 +410,10 @@ void Game::initModelStuff()
         }};
 
         const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
-            .entryCount = bindLayoutEntries.size(),
-            .entries = bindLayoutEntries.data(),
+            .entryCount = bindGroupLayoutEntries.size(),
+            .entries = bindGroupLayoutEntries.data(),
         };
-        bindGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
+        materialGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
 
         const auto textureViewDesc = wgpu::TextureViewDescriptor{
             .format = wgpu::TextureFormat::RGBA8UnormSrgb,
@@ -387,27 +426,57 @@ void Game::initModelStuff()
         };
         const auto textureView = texture.CreateView(&textureViewDesc);
 
-        const std::array<wgpu::BindGroupEntry, 3> bindings{{
+        const std::array<wgpu::BindGroupEntry, 2> bindings{{
             {
                 .binding = 0,
-                .buffer = uniformBuffer,
-            },
-            {
-                .binding = 1,
                 .textureView = textureView,
             },
             {
-                .binding = 2,
+                .binding = 1,
                 .sampler = nearestSampler,
             },
         }};
         const auto bindGroupDesc = wgpu::BindGroupDescriptor{
-            .layout = bindGroupLayout.Get(),
+            .layout = materialGroupLayout.Get(),
             .entryCount = bindings.size(),
             .entries = bindings.data(),
         };
 
-        bindGroup = device.CreateBindGroup(&bindGroupDesc);
+        materialBindGroup = device.CreateBindGroup(&bindGroupDesc);
+    }
+
+    wgpu::BindGroupLayout meshGroupLayout;
+    { // mesh bind group
+        const std::array<wgpu::BindGroupLayoutEntry, 1> bindGroupLayoutEntries{{
+            {
+                .binding = 0,
+                .visibility = wgpu::ShaderStage::Vertex,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::Uniform,
+                    },
+            },
+        }};
+
+        const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+            .entryCount = bindGroupLayoutEntries.size(),
+            .entries = bindGroupLayoutEntries.data(),
+        };
+        meshGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
+
+        const std::array<wgpu::BindGroupEntry, 1> bindings{{
+            {
+                .binding = 0,
+                .buffer = meshDataBuffer,
+            },
+        }};
+        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .layout = perFrameDataGroupLayout.Get(),
+            .entryCount = bindings.size(),
+            .entries = bindings.data(),
+        };
+
+        meshBindGroup = device.CreateBindGroup(&bindGroupDesc);
     }
 
     { // vertex buffer
@@ -431,9 +500,14 @@ void Game::initModelStuff()
     }
 
     {
+        std::array<wgpu::BindGroupLayout, 3> groupLayouts{
+            perFrameDataGroupLayout,
+            materialGroupLayout,
+            meshGroupLayout,
+        };
         const wgpu::PipelineLayoutDescriptor layoutDesc{
-            .bindGroupLayoutCount = 1,
-            .bindGroupLayouts = &bindGroupLayout,
+            .bindGroupLayoutCount = groupLayouts.size(),
+            .bindGroupLayouts = groupLayouts.data(),
         };
         wgpu::RenderPipelineDescriptor pipelineDesc{
             .layout = device.CreatePipelineLayout(&layoutDesc),
@@ -706,7 +780,6 @@ void Game::initSpriteStuff()
 
 void Game::initCamera()
 {
-    cameraPos = glm::vec3(0.0f, 1.0f, 3.0f);
     glm::vec3 cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
     cameraDirection = glm::normalize(cameraPos - cameraTarget);
 
@@ -769,17 +842,49 @@ void Game::loop()
 
 void Game::update(float dt)
 {
-    meshRotationAngle += 0.5f * dt;
+    { // camera control
+#if 0
+        const Uint8* state = SDL_GetKeyboardState(nullptr);
+        glm::vec3 walkDir{};
 
-    glm::mat4 meshTransform{1.f};
-    meshTransform = glm::rotate(meshTransform, meshRotationAngle, glm::vec3{0.f, 1.f, 0.f});
+        if (state[SDL_SCANCODE_W]) {
+            walkDir.z -= 1.f;
+        }
+        if (state[SDL_SCANCODE_S]) {
+            walkDir.z += 1.f;
+        }
+        if (state[SDL_SCANCODE_A]) {
+            walkDir.x -= 1.f;
+        }
+        if (state[SDL_SCANCODE_D]) {
+            walkDir.x += 1.f;
+        }
 
-    UniformData ud{
-        .viewProj = cameraProj * cameraView,
-        .model = meshTransform,
-    };
+        const auto walkVel = walkDir * 5.f;
+        cameraPos += walkVel * dt;
 
-    queue.WriteBuffer(uniformBuffer, 0, &ud, sizeof(UniformData));
+        std::cout << cameraPos.x << " " << cameraPos.y << " " << cameraPos.z << std::endl;
+        initCamera();
+#endif
+    }
+
+    { // per frame data
+        PerFrameData ud{
+            .viewProj = cameraProj * cameraView,
+        };
+        queue.WriteBuffer(frameDataBuffer, 0, &ud, sizeof(PerFrameData));
+    }
+
+    { // update mesh
+        meshRotationAngle += 0.5f * dt;
+        glm::mat4 meshTransform{1.f};
+        meshTransform = glm::rotate(meshTransform, meshRotationAngle, glm::vec3{0.f, 1.f, 0.f});
+
+        MeshData md{
+            .model = meshTransform,
+        };
+        queue.WriteBuffer(meshDataBuffer, 0, &md, sizeof(MeshData));
+    }
 }
 
 void Game::render()
@@ -860,7 +965,9 @@ void Game::render()
             auto& mesh = model.meshes[0];
 
             renderPass.SetPipeline(pipeline);
-            renderPass.SetBindGroup(0, bindGroup, 0, nullptr);
+            renderPass.SetBindGroup(0, perFrameBindGroup, 0, nullptr);
+            renderPass.SetBindGroup(1, materialBindGroup, 0, nullptr);
+            renderPass.SetBindGroup(2, meshBindGroup, 0, nullptr);
             renderPass
                 .SetVertexBuffer(0, vertexBuffer, 0, mesh.vertices.size() * sizeof(Mesh::Vertex));
             renderPass.SetIndexBuffer(

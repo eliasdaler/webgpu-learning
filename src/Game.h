@@ -52,14 +52,22 @@ private:
     wgpu::Queue queue;
 
     wgpu::ShaderModule shaderModule;
-    wgpu::BindGroup bindGroup;
+
+    wgpu::BindGroup perFrameBindGroup;
+    wgpu::BindGroup materialBindGroup;
+    wgpu::BindGroup meshBindGroup;
+
     wgpu::RenderPipeline pipeline;
 
-    struct UniformData {
+    struct PerFrameData {
         glm::mat4 viewProj;
+    };
+    wgpu::Buffer frameDataBuffer;
+
+    struct MeshData {
         glm::mat4 model;
     };
-    wgpu::Buffer uniformBuffer;
+    wgpu::Buffer meshDataBuffer;
 
     wgpu::TextureFormat depthTextureFormat{wgpu::TextureFormat::Depth24Plus};
     wgpu::Texture depthTexture;
