@@ -166,18 +166,18 @@ void Game::init()
 
     util::initWebGPU();
 
-    const wgpu::InstanceDescriptor instanceDesc{};
+    const auto instanceDesc = wgpu::InstanceDescriptor{};
     instance = wgpu::CreateInstance(&instanceDesc);
     if (!instance) {
         std::cerr << "Could not initialize WebGPU!\n";
         std::exit(1);
     }
 
-    const wgpu::RequestAdapterOptions adapterOpts{};
+    const auto adapterOpts = wgpu::RequestAdapterOptions{};
     adapter = util::requestAdapter(instance, &adapterOpts);
 
     { // report supported limits
-        wgpu::SupportedLimits supportedLimits{};
+        auto supportedLimits = wgpu::SupportedLimits{};
         adapter.GetLimits(&supportedLimits);
         std::cout << "max uniform buffer size: "
                   << supportedLimits.limits.maxUniformBufferBindingSize << std::endl;
@@ -208,8 +208,8 @@ void Game::init()
     surface = std::make_unique<wgpu::Surface>(SDL_GetWGPUSurface(instance, window));
 
     // TODO: set limits
-    const wgpu::RequiredLimits requiredLimits{};
-    const wgpu::DeviceDescriptor deviceDesc{
+    const auto requiredLimits = wgpu::RequiredLimits{};
+    const auto deviceDesc = wgpu::DeviceDescriptor{
         .label = "Device",
         .requiredLimits = &requiredLimits,
     };
@@ -237,10 +237,9 @@ void Game::init()
     };
     queue.OnSubmittedWorkDone(onQueueWorkDone, nullptr);
 
+    swapChainFormat = wgpu::TextureFormat::BGRA8Unorm;
     { // init swapchain
-        swapChainFormat = wgpu::TextureFormat::BGRA8Unorm;
-
-        const wgpu::SwapChainDescriptor swapChainDesc = {
+        const auto swapChainDesc = wgpu::SwapChainDescriptor{
             .usage = wgpu::TextureUsage::RenderAttachment,
             .format = swapChainFormat,
             .width = static_cast<std::uint32_t>(params.screenWidth),
@@ -265,14 +264,14 @@ void Game::init()
     initCamera();
 
     { // uniform buffer
-        const wgpu::BufferDescriptor bufferDesc{
-            .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Uniform,
+        const auto bufferDesc = wgpu::BufferDescriptor{
+            .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
             .size = sizeof(UniformData),
         };
 
         uniformBuffer = device.CreateBuffer(&bufferDesc);
 
-        const UniformData ud{
+        const auto ud = UniformData{
             .viewProj = cameraProj * cameraView,
             .model = glm::mat4(1.f),
         };
@@ -288,11 +287,11 @@ void Game::init()
 void Game::initModelStuff()
 {
     { // create shader module
-        wgpu::ShaderModuleWGSLDescriptor shaderCodeDesc;
+        auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
         shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
         shaderCodeDesc.code = shaderSource;
 
-        const wgpu::ShaderModuleDescriptor shaderDesc{
+        const auto shaderDesc = wgpu::ShaderModuleDescriptor{
             .nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&shaderCodeDesc),
             .label = "model",
         };
@@ -308,43 +307,12 @@ void Game::initModelStuff()
     auto& mesh = model.meshes[0];
     std::cout << "num vertices:" << mesh.vertices.size() << std::endl;
 
-    { // load diffuse texture
-        const ImageData data = util::loadImage(mesh.diffuseTexturePath);
-        assert(data.pixels != nullptr);
-        assert(data.channels == 4);
-
-        const wgpu::TextureDescriptor textureDesc{
-            .label = mesh.diffuseTexturePath.c_str(),
-            .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
-            .dimension = wgpu::TextureDimension::e2D,
-            .size =
-                {
-                    .width = static_cast<std::uint32_t>(data.width),
-                    .height = static_cast<std::uint32_t>(data.height),
-                    .depthOrArrayLayers = 1,
-                },
-            .format = wgpu::TextureFormat::RGBA8UnormSrgb,
-            .mipLevelCount = 1,
-            .sampleCount = 1,
-        };
-        texture = device.CreateTexture(&textureDesc);
-
-        const wgpu::ImageCopyTexture destination{
-            .texture = texture,
-            .mipLevel = 0,
-            .origin = {0, 0, 0},
-        };
-        const wgpu::TextureDataLayout source{
-            .bytesPerRow = static_cast<std::uint32_t>(data.width * data.channels),
-            .rowsPerImage = static_cast<std::uint32_t>(data.height)};
-
-        const auto pixelsSize = data.width * data.height * data.channels;
-        queue
-            .WriteTexture(&destination, (void*)data.pixels, pixelsSize, &source, &textureDesc.size);
-    }
+    // load diffuse texture
+    texture = util::
+        loadTexture(device, queue, mesh.diffuseTexturePath, wgpu::TextureFormat::RGBA8UnormSrgb);
 
     { // create depth dexture
-        const wgpu::TextureDescriptor textureDesc{
+        const auto textureDesc = wgpu::TextureDescriptor{
             .usage = wgpu::TextureUsage::RenderAttachment,
             .dimension = wgpu::TextureDimension::e2D,
             .size =
@@ -361,7 +329,7 @@ void Game::initModelStuff()
     }
 
     { // create depth texture view
-        const wgpu::TextureViewDescriptor textureViewDesc{
+        const auto textureViewDesc = wgpu::TextureViewDescriptor{
             .format = depthTextureFormat,
             .dimension = wgpu::TextureViewDimension::e2D,
             .baseMipLevel = 0,
@@ -375,7 +343,7 @@ void Game::initModelStuff()
 
     wgpu::BindGroupLayout bindGroupLayout;
     { // create bind group
-        const std::array<wgpu::BindGroupLayoutEntry, 3> bindingLayoutEntries{{
+        const std::array<wgpu::BindGroupLayoutEntry, 3> bindLayoutEntries{{
             {
                 .binding = 0,
                 .visibility = wgpu::ShaderStage::Vertex,
@@ -403,13 +371,13 @@ void Game::initModelStuff()
             },
         }};
 
-        const wgpu::BindGroupLayoutDescriptor bindGroupLayoutDesc{
-            .entryCount = bindingLayoutEntries.size(),
-            .entries = bindingLayoutEntries.data(),
+        const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+            .entryCount = bindLayoutEntries.size(),
+            .entries = bindLayoutEntries.data(),
         };
         bindGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
 
-        const wgpu::TextureViewDescriptor textureViewDesc{
+        const auto textureViewDesc = wgpu::TextureViewDescriptor{
             .format = wgpu::TextureFormat::RGBA8UnormSrgb,
             .dimension = wgpu::TextureViewDimension::e2D,
             .baseMipLevel = 0,
@@ -434,7 +402,7 @@ void Game::initModelStuff()
                 .sampler = nearestSampler,
             },
         }};
-        const wgpu::BindGroupDescriptor bindGroupDesc{
+        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
             .layout = bindGroupLayout.Get(),
             .entryCount = bindings.size(),
             .entries = bindings.data(),
@@ -444,26 +412,22 @@ void Game::initModelStuff()
     }
 
     { // vertex buffer
-        const wgpu::BufferDescriptor bufferDesc{
-            .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Vertex,
+        const auto bufferDesc = wgpu::BufferDescriptor{
+            .usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst,
             .size = mesh.vertices.size() * sizeof(Mesh::Vertex),
         };
 
         vertexBuffer = device.CreateBuffer(&bufferDesc);
-
         queue.WriteBuffer(vertexBuffer, 0, mesh.vertices.data(), bufferDesc.size);
     }
 
     { // index buffer
-        util::insertFakeTriangleIfNeeded(mesh.indices);
-
-        const wgpu::BufferDescriptor bufferDesc{
-            .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Index,
+        const auto bufferDesc = wgpu::BufferDescriptor{
+            .usage = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst,
             .size = mesh.indices.size() * sizeof(std::uint16_t),
         };
 
         indexBuffer = device.CreateBuffer(&bufferDesc);
-
         queue.WriteBuffer(indexBuffer, 0, mesh.indices.data(), bufferDesc.size);
     }
 
@@ -515,7 +479,7 @@ void Game::initModelStuff()
             },
         }};
 
-        const wgpu::VertexBufferLayout vertexBufferLayout{
+        const auto vertexBufferLayout = wgpu::VertexBufferLayout{
             .arrayStride = sizeof(Mesh::Vertex),
             .stepMode = wgpu::VertexStepMode::Vertex,
             .attributeCount = static_cast<std::size_t>(vertexAttribs.size()),
@@ -530,7 +494,7 @@ void Game::initModelStuff()
         };
 
         // fragment
-        const wgpu::BlendState blendState{
+        const auto blendState = wgpu::BlendState{
             .color =
                 {
                     .operation = wgpu::BlendOperation::Add,
@@ -543,13 +507,13 @@ void Game::initModelStuff()
                 .dstFactor = wgpu::BlendFactor::One,
             }};
 
-        const wgpu::ColorTargetState colorTarget = {
+        const auto colorTarget = wgpu::ColorTargetState{
             .format = swapChainFormat,
             .blend = &blendState,
             .writeMask = wgpu::ColorWriteMask::All,
         };
 
-        const wgpu::FragmentState fragmentState = {
+        const auto fragmentState = wgpu::FragmentState{
             .module = shaderModule,
             .entryPoint = "fs_main",
             .targetCount = 1,
@@ -574,11 +538,11 @@ void Game::initModelStuff()
 void Game::initSpriteStuff()
 {
     { // create sprite shader module
-        wgpu::ShaderModuleWGSLDescriptor shaderCodeDesc;
+        auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
         shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
         shaderCodeDesc.code = spriteShaderSource;
 
-        wgpu::ShaderModuleDescriptor shaderDesc{
+        const auto shaderDesc = wgpu::ShaderModuleDescriptor{
             .nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&shaderCodeDesc),
             .label = "sprite",
         };
@@ -587,38 +551,8 @@ void Game::initSpriteStuff()
         shaderModule.GetCompilationInfo(defaultCompilationCallback, nullptr);
     }
 
-    {
-        ImageData data = util::loadImage("assets/textures/shinji.png");
-        assert(data.channels == 4);
-
-        const wgpu::TextureDescriptor textureDesc{
-            .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
-            .dimension = wgpu::TextureDimension::e2D,
-            .size =
-                {
-                    .width = static_cast<std::uint32_t>(data.width),
-                    .height = static_cast<std::uint32_t>(data.height),
-                    .depthOrArrayLayers = 1,
-                },
-            .format = wgpu::TextureFormat::RGBA8UnormSrgb,
-            .mipLevelCount = 1,
-            .sampleCount = 1,
-        };
-        spriteTexture = device.CreateTexture(&textureDesc);
-
-        const wgpu::ImageCopyTexture destination{
-            .texture = spriteTexture,
-            .mipLevel = 0,
-            .origin = {0, 0, 0},
-        };
-        const wgpu::TextureDataLayout source{
-            .bytesPerRow = static_cast<std::uint32_t>(data.width * data.channels),
-            .rowsPerImage = static_cast<std::uint32_t>(data.height)};
-
-        const auto pixelsSize = data.width * data.height * data.channels;
-        queue
-            .WriteTexture(&destination, (void*)data.pixels, pixelsSize, &source, &textureDesc.size);
-    }
+    spriteTexture = util::loadTexture(
+        device, queue, "assets/textures/shinji.png", wgpu::TextureFormat::RGBA8UnormSrgb);
 
     wgpu::BindGroupLayout bindGroupLayout;
     {

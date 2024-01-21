@@ -5,6 +5,8 @@
 
 #include <Graphics/Model.h>
 
+#include "WebGPUUtil.h"
+
 #define TINYGLTF_IMPLEMENTATION
 #define TINYGLTF_NO_STB_IMAGE
 #define TINYGLTF_NO_STB_IMAGE_WRITE
@@ -134,6 +136,7 @@ Mesh loadMesh(
         const auto& indexAccessor = model.accessors[primitive.indices];
         const auto indices = getPackedBufferSpan<std::uint16_t>(model, indexAccessor);
         mesh.indices.assign(indices.begin(), indices.end());
+        util::padBufferToFourBytes(mesh.indices);
     }
 
     // resize vertices based on the first accessor size

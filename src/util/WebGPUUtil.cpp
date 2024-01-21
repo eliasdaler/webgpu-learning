@@ -7,6 +7,8 @@
 
 #include <cassert>
 
+#include "ImageLoader.h"
+
 namespace util
 {
 
@@ -54,7 +56,7 @@ wgpu::Device requestDevice(const wgpu::Adapter& adapter, wgpu::DeviceDescriptor 
     return device;
 }
 
-void insertFakeTriangleIfNeeded(std::vector<std::uint16_t>& indices)
+void padBufferToFourBytes(std::vector<std::uint16_t>& indices)
 {
     assert(indices.size() % 3 == 0 && "Number of indices not divisible by 3");
     if (indices.size() % 6 != 0) {
@@ -62,6 +64,49 @@ void insertFakeTriangleIfNeeded(std::vector<std::uint16_t>& indices)
             indices.push_back(0);
         }
     }
+}
+
+wgpu::Texture loadTexture(
+    const wgpu::Device& device,
+    const wgpu::Queue& queue,
+    const std::filesystem::path& path,
+    wgpu::TextureFormat format)
+{
+    ImageData data = util::loadImage(path);
+    assert(data.channels == 4);
+    assert(data.pixels != nullptr);
+    assert(format == wgpu::TextureFormat::RGBA8UnormSrgb && "other formats are not yet supported");
+
+    const auto textureDesc = wgpu::TextureDescriptor{
+        .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
+        .dimension = wgpu::TextureDimension::e2D,
+        .size =
+            {
+                .width = static_cast<std::uint32_t>(data.width),
+                .height = static_cast<std::uint32_t>(data.height),
+                .depthOrArrayLayers = 1,
+            },
+        .format = format,
+        .mipLevelCount = 1,
+        .sampleCount = 1,
+    };
+
+    auto texture = device.CreateTexture(&textureDesc);
+
+    // copy data to GPU
+    const wgpu::ImageCopyTexture destination{
+        .texture = texture,
+        .mipLevel = 0,
+        .origin = {0, 0, 0},
+    };
+    const wgpu::TextureDataLayout source{
+        .bytesPerRow = static_cast<std::uint32_t>(data.width * data.channels),
+        .rowsPerImage = static_cast<std::uint32_t>(data.height)};
+
+    const auto pixelsSize = data.width * data.height * data.channels;
+    queue.WriteTexture(&destination, (void*)data.pixels, pixelsSize, &source, &textureDesc.size);
+
+    return texture;
 }
 
 } // end of namespace util
