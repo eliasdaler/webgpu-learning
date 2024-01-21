@@ -1,7 +1,6 @@
 #include "Game.h"
 
 #include "util/GltfLoader.h"
-#include "util/ImageLoader.h"
 #include "util/OSUtil.h"
 #include "util/SDLWebGPU.h"
 #include "util/WebGPUUtil.h"
@@ -432,21 +431,25 @@ void Game::initModelStuff()
     }
 
     {
-        wgpu::RenderPipelineDescriptor pipelineDesc{};
-
-        pipelineDesc.primitive = wgpu::PrimitiveState{
-            .topology = wgpu::PrimitiveTopology::TriangleList,
-            .stripIndexFormat = wgpu::IndexFormat::Undefined,
-            .frontFace = wgpu::FrontFace::CCW,
-            .cullMode = wgpu::CullMode::Back,
+        const wgpu::PipelineLayoutDescriptor layoutDesc{
+            .bindGroupLayoutCount = 1,
+            .bindGroupLayouts = &bindGroupLayout,
+        };
+        wgpu::RenderPipelineDescriptor pipelineDesc{
+            .layout = device.CreatePipelineLayout(&layoutDesc),
+            .primitive =
+                {
+                    .topology = wgpu::PrimitiveTopology::TriangleList,
+                    .stripIndexFormat = wgpu::IndexFormat::Undefined,
+                    .frontFace = wgpu::FrontFace::CCW,
+                    .cullMode = wgpu::CullMode::Back,
+                },
         };
 
         const auto depthStencilState = wgpu::DepthStencilState{
             .format = depthTextureFormat,
             .depthWriteEnabled = true,
             .depthCompare = wgpu::CompareFunction::Less,
-            .stencilReadMask = 0,
-            .stencilWriteMask = 0,
         };
 
         pipelineDesc.depthStencil = &depthStencilState;
@@ -520,16 +523,6 @@ void Game::initModelStuff()
             .targets = &colorTarget,
         };
         pipelineDesc.fragment = &fragmentState;
-
-        pipelineDesc.multisample.count = 1;
-        pipelineDesc.multisample.mask = ~0u;
-        pipelineDesc.multisample.alphaToCoverageEnabled = false;
-
-        const wgpu::PipelineLayoutDescriptor layoutDesc{
-            .bindGroupLayoutCount = 1,
-            .bindGroupLayouts = &bindGroupLayout,
-        };
-        pipelineDesc.layout = device.CreatePipelineLayout(&layoutDesc);
 
         pipeline = device.CreateRenderPipeline(&pipelineDesc);
     }
@@ -612,13 +605,19 @@ void Game::initSpriteStuff()
     }
 
     {
-        wgpu::RenderPipelineDescriptor pipelineDesc{};
-
-        pipelineDesc.primitive = wgpu::PrimitiveState{
-            .topology = wgpu::PrimitiveTopology::TriangleList,
-            .stripIndexFormat = wgpu::IndexFormat::Undefined,
-            .frontFace = wgpu::FrontFace::CCW,
-            .cullMode = wgpu::CullMode::None,
+        const auto layoutDesc = wgpu::PipelineLayoutDescriptor{
+            .bindGroupLayoutCount = 1,
+            .bindGroupLayouts = &bindGroupLayout,
+        };
+        auto pipelineDesc = wgpu::RenderPipelineDescriptor{
+            .layout = device.CreatePipelineLayout(&layoutDesc),
+            .primitive =
+                {
+                    .topology = wgpu::PrimitiveTopology::TriangleList,
+                    .stripIndexFormat = wgpu::IndexFormat::Undefined,
+                    .frontFace = wgpu::FrontFace::CCW,
+                    .cullMode = wgpu::CullMode::None,
+                },
         };
 
         // vertex
@@ -637,7 +636,7 @@ void Game::initSpriteStuff()
             },
         }};
 
-        const wgpu::VertexBufferLayout vertexBufferLayout{
+        const auto vertexBufferLayout = wgpu::VertexBufferLayout{
             .arrayStride = 4 * sizeof(float),
             .stepMode = wgpu::VertexStepMode::Vertex,
             .attributeCount = static_cast<std::size_t>(vertexAttribs.size()),
@@ -652,7 +651,7 @@ void Game::initSpriteStuff()
         };
 
         // fragment
-        const wgpu::BlendState blendState{
+        const auto blendState = wgpu::BlendState{
             .color =
                 {
                     .operation = wgpu::BlendOperation::Add,
@@ -678,16 +677,6 @@ void Game::initSpriteStuff()
             .targets = &colorTarget,
         };
         pipelineDesc.fragment = &fragmentState;
-
-        pipelineDesc.multisample.count = 1;
-        pipelineDesc.multisample.mask = ~0u;
-        pipelineDesc.multisample.alphaToCoverageEnabled = false;
-
-        wgpu::PipelineLayoutDescriptor layoutDesc{
-            .bindGroupLayoutCount = 1,
-            .bindGroupLayouts = &bindGroupLayout,
-        };
-        pipelineDesc.layout = device.CreatePipelineLayout(&layoutDesc);
 
         spritePipeline = device.CreateRenderPipeline(&pipelineDesc);
     }
@@ -806,78 +795,89 @@ void Game::render()
         return;
     }
 
-    const wgpu::CommandEncoderDescriptor commandEncoderDesc{};
+    const auto commandEncoderDesc = wgpu::CommandEncoderDescriptor{};
     const auto encoder = device.CreateCommandEncoder(&commandEncoderDesc);
 
-    const wgpu::RenderPassColorAttachment noDepthRenderPassColorAttachment = {
-        .view = nextFrameTexture,
-        .loadOp = wgpu::LoadOp::Clear,
-        .storeOp = wgpu::StoreOp::Store,
-        .clearValue = clearColor,
-    };
+    { // BG
+        const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
+            .view = nextFrameTexture,
+            .loadOp = wgpu::LoadOp::Clear,
+            .storeOp = wgpu::StoreOp::Store,
+            .clearValue = clearColor,
+        };
 
-    const wgpu::RenderPassDescriptor noDepthRenderPassDesc = {
-        .colorAttachmentCount = 1,
-        .colorAttachments = &noDepthRenderPassColorAttachment,
-    };
+        const auto renderPassDesc = wgpu::RenderPassDescriptor{
+            .colorAttachmentCount = 1,
+            .colorAttachments = &mainScreenAttachment,
+        };
 
-    const auto bgRenderPass = encoder.BeginRenderPass(&noDepthRenderPassDesc);
+        const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
+        renderPass.PushDebugGroup("Draw BG");
 
-    bgRenderPass.PushDebugGroup("Draw BG");
-    { // draw sprite
-        bgRenderPass.SetPipeline(spritePipeline);
-        bgRenderPass.SetBindGroup(0, spriteBindGroup, 0, nullptr);
-        bgRenderPass.SetVertexBuffer(0, spriteVertexBuffer, 0, pointData.size() * sizeof(float));
-        bgRenderPass.SetIndexBuffer(
-            spriteIndexBuffer, wgpu::IndexFormat::Uint16, 0, indexCount * sizeof(std::uint16_t));
-        bgRenderPass.DrawIndexed(indexCount, 1, 0, 0, 0);
+        { // draw sprites
+            renderPass.SetPipeline(spritePipeline);
+            renderPass.SetBindGroup(0, spriteBindGroup, 0, nullptr);
+            renderPass.SetVertexBuffer(0, spriteVertexBuffer, 0, pointData.size() * sizeof(float));
+            renderPass.SetIndexBuffer(
+                spriteIndexBuffer,
+                wgpu::IndexFormat::Uint16,
+                0,
+                indexCount * sizeof(std::uint16_t));
+            renderPass.DrawIndexed(indexCount, 1, 0, 0, 0);
+        }
+
+        renderPass.PopDebugGroup();
+        renderPass.End();
     }
-    bgRenderPass.PopDebugGroup();
-    bgRenderPass.End();
 
-    const wgpu::RenderPassColorAttachment renderPassColorAttachment = {
-        .view = nextFrameTexture,
-        .loadOp = wgpu::LoadOp::Load,
-        .storeOp = wgpu::StoreOp::Store,
-        .clearValue = clearColor,
-    };
+    { // draw meshes
+        const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
+            .view = nextFrameTexture,
+            .loadOp = wgpu::LoadOp::Load,
+            .storeOp = wgpu::StoreOp::Store,
+            .clearValue = clearColor,
+        };
 
-    const wgpu::RenderPassDepthStencilAttachment depthStencilAttachment = {
-        .view = depthTextureView,
-        .depthLoadOp = wgpu::LoadOp::Clear,
-        .depthStoreOp = wgpu::StoreOp::Store,
-        .depthClearValue = 1.f,
-        .depthReadOnly = false,
-        .stencilLoadOp = wgpu::LoadOp::Undefined,
-        .stencilStoreOp = wgpu::StoreOp::Undefined,
-        .stencilClearValue = 0,
-        .stencilReadOnly = true,
-    };
+        const auto depthStencilAttachment = wgpu::RenderPassDepthStencilAttachment{
+            .view = depthTextureView,
+            .depthLoadOp = wgpu::LoadOp::Clear,
+            .depthStoreOp = wgpu::StoreOp::Store,
+            .depthClearValue = 1.f,
+            .depthReadOnly = false,
+            // no stencil
+        };
 
-    const wgpu::RenderPassDescriptor renderPassDesc = {
-        .colorAttachmentCount = 1,
-        .colorAttachments = &renderPassColorAttachment,
-        .depthStencilAttachment = &depthStencilAttachment,
-    };
+        const auto renderPassDesc = wgpu::RenderPassDescriptor{
+            .colorAttachmentCount = 1,
+            .colorAttachments = &mainScreenAttachment,
+            .depthStencilAttachment = &depthStencilAttachment,
+        };
 
-    const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
-    renderPass.PushDebugGroup("Draw meshes");
-    { // draw mesh
-        auto& mesh = model.meshes[0];
+        const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
+        renderPass.PushDebugGroup("Draw meshes");
 
-        renderPass.SetPipeline(pipeline);
-        renderPass.SetBindGroup(0, bindGroup, 0, nullptr);
-        renderPass.SetVertexBuffer(0, vertexBuffer, 0, mesh.vertices.size() * sizeof(Mesh::Vertex));
-        renderPass.SetIndexBuffer(
-            indexBuffer, wgpu::IndexFormat::Uint16, 0, mesh.indices.size() * sizeof(std::uint16_t));
-        renderPass.DrawIndexed(mesh.indices.size(), 1, 0, 0, 0);
+        { // draw mesh
+            auto& mesh = model.meshes[0];
+
+            renderPass.SetPipeline(pipeline);
+            renderPass.SetBindGroup(0, bindGroup, 0, nullptr);
+            renderPass
+                .SetVertexBuffer(0, vertexBuffer, 0, mesh.vertices.size() * sizeof(Mesh::Vertex));
+            renderPass.SetIndexBuffer(
+                indexBuffer,
+                wgpu::IndexFormat::Uint16,
+                0,
+                mesh.indices.size() * sizeof(std::uint16_t));
+            renderPass.DrawIndexed(mesh.indices.size(), 1, 0, 0, 0);
+        }
+
+        renderPass.PopDebugGroup();
+        renderPass.End();
     }
-    renderPass.PopDebugGroup();
-    renderPass.End();
 
     // submit
-    const wgpu::CommandBufferDescriptor cmdBufferDescriptor{};
-    const auto command = encoder.Finish(&cmdBufferDescriptor);
+    const auto cmdBufferDesc = wgpu::CommandBufferDescriptor{};
+    const auto command = encoder.Finish(&cmdBufferDesc);
     queue.Submit(1, &command);
 
     // flush
