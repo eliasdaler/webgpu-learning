@@ -77,6 +77,8 @@ private:
     wgpu::Buffer spriteIndexBuffer;
     wgpu::Texture spriteTexture;
 
+    wgpu::Sampler nearestSampler;
+
     Model model;
 
     glm::vec3 cameraPos;
