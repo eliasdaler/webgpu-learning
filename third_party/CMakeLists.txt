@@ -12,14 +12,20 @@ option(DAWN_BUILD_SAMPLES "Enables building Dawn's samples" OFF)
 
 option(TINT_BUILD_CMD_TOOLS "Build the Tint command line tools" OFF)
 option(TINT_BUILD_DOCS "Build documentation" OFF)
-option(TINT_BUILD_SPV_READER "Build the SPIR-V input reader" OFF)
-option(TINT_BUILD_WGSL_READER "Build the WGSL input reader" ON)
-option(TINT_BUILD_GLSL_WRITER "Build the GLSL output writer" OFF)
-option(TINT_BUILD_GLSL_VALIDATOR "Build the GLSL output validator" OFF)
-option(TINT_BUILD_MSL_WRITER "Build the MSL output writer" OFF)
-option(TINT_BUILD_SPV_WRITER "Build the SPIR-V output writer" OFF)
-option(TINT_BUILD_WGSL_WRITER "Build the WGSL output writer" ON)
 option(TINT_BUILD_TESTS "Build tests" OFF)
+
+if (NOT APPLE)
+  option(TINT_BUILD_MSL_WRITER "Build the MSL output writer" OFF)
+endif()
+
+if(WIN32)
+  option(TINT_BUILD_SPV_READER "Build the SPIR-V input reader" OFF)
+  option(TINT_BUILD_WGSL_READER "Build the WGSL input reader" ON)
+  option(TINT_BUILD_GLSL_WRITER "Build the GLSL output writer" OFF)
+  option(TINT_BUILD_GLSL_VALIDATOR "Build the GLSL output validator" OFF)
+  option(TINT_BUILD_SPV_WRITER "Build the SPIR-V output writer" OFF)
+  option(TINT_BUILD_WGSL_WRITER "Build the WGSL output writer" ON)
+endif()
 
 add_subdirectory(dawn)
 
