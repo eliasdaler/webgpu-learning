@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <webgpu/webgpu_cpp.h>
 
+#include <array>
 #include <cassert>
 #include <filesystem>
 #include <iostream>
@@ -261,7 +262,7 @@ void Game::init()
         std::exit(1);
     }
 
-    surface = std::make_unique<wgpu::Surface>(SDL_GetWGPUSurface(instance, window));
+    surface = std::make_unique<wgpu::Surface>(util::CreateSurfaceForSDLWindow(instance, window));
 
     // TODO: set limits
     const auto requiredLimits = wgpu::RequiredLimits{};

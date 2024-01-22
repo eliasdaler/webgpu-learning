@@ -20,12 +20,10 @@ target_add_extra_warnings(game)
 
 target_include_directories(game PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
 
-add_custom_target(copy_assets
-  COMMENT "Copying game assets"
-  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/assets" "${CMAKE_CURRENT_BINARY_DIR}/assets"
+add_custom_command(TARGET game POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E echo "Copying game assets to $<TARGET_FILE_DIR:game>/assets"
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/assets" "$<TARGET_FILE_DIR:game>/assets"
 )
-
-add_dependencies(game copy_assets)
 
 if(BUILD_SHARED_LIBS)
   target_link_libraries(game PRIVATE
@@ -40,7 +38,6 @@ endif()
 if(WIN32)
   target_link_libraries(game PRIVATE SDL2::SDL2main)
 endif()
-
 
 target_link_libraries(game PRIVATE stb::image)
 
