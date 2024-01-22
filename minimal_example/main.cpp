@@ -1,33 +1,21 @@
-#pragma once
-
+#include <cstdint>
+#include <iostream>
 #include <memory>
+#include <vector>
 
 #include <webgpu/webgpu_cpp.h>
+#include <webgpu/webgpu_glfw.h>
 
 #include <dawn/dawn_proc.h>
 #include <dawn/native/DawnNative.h>
 
-#include <iostream>
-
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_syswm.h>
-
-#include <cstdint>
-#include <webgpu/webgpu_cpp.h>
-
-#include <iostream>
-#include <vector>
-
-// X11
-#undef None
+#include <GLFW/glfw3.h>
 
 namespace
 {
 constexpr std::int32_t SCREEN_WIDTH = 640;
 constexpr std::int32_t SCREEN_HEIGHT = 480;
 }
-
-struct SDL_Window;
 
 namespace util
 {
@@ -43,10 +31,9 @@ wgpu::Adapter requestAdapter(
     auto onAdapterRequestEnded = [](WGPURequestAdapterStatus status,
                                     WGPUAdapter adapter,
                                     char const* message,
-                                    void* pUserData) {
-        if (status == WGPURequestAdapterStatus_Success) {
-            // std::cout << "Got WebGPU adapter" << std::endl;
-            *static_cast<wgpu::Adapter*>(pUserData) = wgpu::Adapter::Acquire(adapter);
+                                    void* userdata) {
+        if (status == (WGPURequestAdapterStatus)wgpu::RequestAdapterStatus::Success) {
+            *static_cast<wgpu::Adapter*>(userdata) = wgpu::Adapter::Acquire(adapter);
         } else {
             std::cout << "Could not get WebGPU adapter: " << message << std::endl;
         }
@@ -59,106 +46,21 @@ wgpu::Adapter requestAdapter(
 
 wgpu::Device requestDevice(const wgpu::Adapter& adapter, wgpu::DeviceDescriptor const* descriptor)
 {
-    auto onDeviceRequestEnded = [](WGPURequestDeviceStatus status,
-                                   WGPUDevice device,
-                                   char const* message,
-                                   void* pUserData) {
-        if (status == WGPURequestDeviceStatus_Success) {
-            *static_cast<wgpu::Device*>(pUserData) = wgpu::Device::Acquire(device);
-        } else {
-            std::cout << "Could not get WebGPU device: " << message << std::endl;
-        }
-    };
+    auto onDeviceRequestEnded =
+        [](WGPURequestDeviceStatus status, WGPUDevice device, char const* message, void* userdata) {
+            if (status == (WGPURequestDeviceStatus)wgpu::RequestDeviceStatus::Success) {
+                *static_cast<wgpu::Device*>(userdata) = wgpu::Device::Acquire(device);
+            } else {
+                std::cout << "Could not get WebGPU device: " << message << std::endl;
+            }
+        };
 
     wgpu::Device device;
     adapter.RequestDevice(descriptor, onDeviceRequestEnded, (void*)&device);
     return device;
 }
 
-wgpu::Surface SDL_GetWGPUSurface(const wgpu::Instance& instance, SDL_Window* window)
-{
-    SDL_SysWMinfo windowWMInfo;
-    SDL_VERSION(&windowWMInfo.version);
-    SDL_GetWindowWMInfo(window, &windowWMInfo);
-
-#if defined(SDL_VIDEO_DRIVER_X11)
-    {
-        Display* x11_display = windowWMInfo.info.x11.display;
-        Window x11_window = windowWMInfo.info.x11.window;
-
-        wgpu::SurfaceDescriptorFromXlibWindow x11SurfDesc;
-        x11SurfDesc.display = x11_display;
-        x11SurfDesc.window = x11_window;
-
-        wgpu::SurfaceDescriptor surfaceDesc;
-        surfaceDesc.nextInChain = &x11SurfDesc;
-        return instance.CreateSurface(&surfaceDesc);
-    }
-#elif defined(SDL_VIDEO_DRIVER_WINDOWS)
-    static_assert(false, "untested");
-    /* {
-        HWND hwnd = windowWMInfo.info.win.window;
-        HINSTANCE hinstance = GetModuleHandle(NULL);
-
-        WGPUSurfaceDescriptorFromWindowsHWND windowDesc{
-            .chain =
-                WGPUChainedStruct{
-                    .next = NULL,
-                    .sType = WGPUSType_SurfaceDescriptorFromWindowsHWND,
-                },
-            .hinstance = hinstance,
-            .hwnd = hwnd,
-        };
-        WGPUSurfaceDescriptor surfaceDesc{
-            .nextInChain = (const WGPUChainedStruct*)&windowDesc,
-            .label = NULL,
-        };
-        return wgpuInstanceCreateSurface(instance, &surfaceDesc);
-    } */
-#else
-    // TODO: See SDL_syswm.h for other possible enum values!
-#error "Unsupported WGPU_TARGET"
-#endif
 }
-
-}
-
-class Game {
-public:
-    void start();
-
-private:
-    void init();
-    void initModelStuff();
-    void initSpriteStuff();
-    void initCamera();
-
-    void loop();
-    void update(float dt);
-    void render();
-    void quit();
-    void cleanup();
-
-    bool isRunning{false};
-
-    SDL_Window* window{nullptr};
-
-    wgpu::Instance instance;
-    wgpu::Adapter adapter;
-    wgpu::Device device;
-
-    std::unique_ptr<wgpu::Surface> surface;
-    std::unique_ptr<wgpu::SwapChain> swapChain;
-
-    wgpu::TextureFormat swapChainFormat;
-    wgpu::Queue queue;
-
-    wgpu::ShaderModule shaderModule;
-
-    wgpu::RenderPipeline pipeline;
-
-    wgpu::Buffer vertexBuffer;
-};
 
 namespace
 {
@@ -205,28 +107,71 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
 /* clang-format off */
 std::vector<float> pointData = {
-    // x0,  y0,  r0,  g0,  b0
+    // x    y    r    g    b
     -0.5, -0.5, 1.0, 0.0, 0.0, //
-
-    // x1,  y1,  r1,  g1,  b1
     +0.5, -0.5, 0.0, 1.0, 0.0, //
-
-    // ...
     +0.0, +0.5, 0.0, 0.0, 1.0, //
 };
 /* clang-format on */
 
+static void glfwErrorCallback(int error, const char* description)
+{
+    fprintf(stderr, "Error: %s\n", description);
+}
 } // end of anonymous namespace
 
-void Game::start()
+class App {
+public:
+    void start();
+
+private:
+    void init();
+    void createPipeline();
+
+    void loop();
+    void render();
+    void cleanup();
+
+    GLFWwindow* window;
+
+    wgpu::Instance instance;
+    wgpu::Adapter adapter;
+    wgpu::Device device;
+    wgpu::Queue queue;
+    std::unique_ptr<wgpu::Surface> surface;
+
+    std::unique_ptr<wgpu::SwapChain> swapChain;
+    wgpu::TextureFormat swapChainFormat;
+
+    wgpu::ShaderModule shaderModule;
+    wgpu::RenderPipeline pipeline;
+    wgpu::Buffer vertexBuffer;
+};
+
+void App::start()
 {
     init();
     loop();
     cleanup();
 }
 
-void Game::init()
+void App::init()
 {
+    // Initialize GLFW
+    if (!glfwInit()) {
+        std::exit(1);
+    }
+    glfwSetErrorCallback(glfwErrorCallback);
+
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
+
+    window = glfwCreateWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "WebGPU", NULL, NULL);
+    if (!window) {
+        glfwTerminate();
+        std::exit(1);
+    }
+
     util::initWebGPU();
 
     const auto instanceDesc = wgpu::InstanceDescriptor{};
@@ -239,33 +184,10 @@ void Game::init()
     const auto adapterOpts = wgpu::RequestAdapterOptions{};
     adapter = util::requestAdapter(instance, &adapterOpts);
 
-    // Initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) < 0) {
-        printf("SDL could not initialize! SDL Error: %s\n", SDL_GetError());
-        std::exit(1);
-    }
+    surface = std::make_unique<wgpu::Surface>(wgpu::glfw::CreateSurfaceForWindow(instance, window));
 
-    window = SDL_CreateWindow(
-        "WebGPU demo",
-        // pos
-        SDL_WINDOWPOS_UNDEFINED,
-        SDL_WINDOWPOS_UNDEFINED,
-        // size
-        SCREEN_WIDTH,
-        SCREEN_HEIGHT,
-        0);
-
-    if (!window) {
-        std::cout << "Failed to create window. SDL Error: " << SDL_GetError();
-        std::exit(1);
-    }
-
-    surface = std::make_unique<wgpu::Surface>(util::SDL_GetWGPUSurface(instance, window));
-
-    // TODO: set limits
     const auto requiredLimits = wgpu::RequiredLimits{};
     const auto deviceDesc = wgpu::DeviceDescriptor{
-        .label = "Device",
         .requiredLimits = &requiredLimits,
     };
 
@@ -296,10 +218,10 @@ void Game::init()
             std::make_unique<wgpu::SwapChain>(device.CreateSwapChain(*surface, &swapChainDesc));
     }
 
-    initModelStuff();
+    createPipeline();
 }
 
-void Game::initModelStuff()
+void App::createPipeline()
 {
     { // create shader module
         auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
@@ -325,13 +247,12 @@ void Game::initModelStuff()
         queue.WriteBuffer(vertexBuffer, 0, pointData.data(), bufferDesc.size);
     }
 
-    {
+    { // pipeline
         wgpu::RenderPipelineDescriptor pipelineDesc{
             .primitive =
                 {
                     .topology = wgpu::PrimitiveTopology::TriangleList,
                     .stripIndexFormat = wgpu::IndexFormat::Undefined,
-                    .frontFace = wgpu::FrontFace::CCW,
                     .cullMode = wgpu::CullMode::None,
                 },
         };
@@ -355,7 +276,7 @@ void Game::initModelStuff()
         const auto vertexBufferLayout = wgpu::VertexBufferLayout{
             .arrayStride = 5 * sizeof(float),
             .stepMode = wgpu::VertexStepMode::Vertex,
-            .attributeCount = static_cast<std::size_t>(vertexAttribs.size()),
+            .attributeCount = vertexAttribs.size(),
             .attributes = vertexAttribs.data(),
         };
 
@@ -398,94 +319,48 @@ void Game::initModelStuff()
     }
 }
 
-void Game::loop()
+void App::loop()
 {
-    // Fix your timestep! game loop
-    const float FPS = 60.f;
-    const float dt = 1.f / FPS;
-
-    uint32_t prev_time = SDL_GetTicks();
-    float accumulator = dt; // so that we get at least 1 update before render
-
-    isRunning = true;
-    while (isRunning) {
-        uint32_t new_time = SDL_GetTicks();
-        const auto frame_time = (new_time - prev_time) / 1000.f;
-        accumulator += frame_time;
-        prev_time = new_time;
-
-        if (accumulator > 10 * dt) { // game stopped for debug
-            accumulator = dt;
-        }
-
-        while (accumulator >= dt) {
-            { // event processing
-                SDL_Event event;
-                while (SDL_PollEvent(&event)) {
-                    if (event.type == SDL_QUIT) {
-                        quit();
-                    }
-                }
-            }
-
-            // update
-            update(dt);
-
-            accumulator -= dt;
-        }
-
+    while (!glfwWindowShouldClose(window)) {
+        glfwPollEvents();
         render();
-
-        // Delay to not overload the CPU
-        const auto frameTime = (SDL_GetTicks() - prev_time) / 1000.f;
-        if (dt > frameTime) {
-            SDL_Delay(dt - frameTime);
-        }
     }
 }
 
-void Game::update(float dt)
-{}
-
-void Game::render()
+void App::render()
 {
     // cornflower blue <3
     static const wgpu::Color clearColor{100.f / 255.f, 149.f / 255.f, 237.f / 255.f, 255.f / 255.f};
 
-    const auto nextFrameTexture = swapChain->GetCurrentTextureView();
-    if (!nextFrameTexture) {
+    const auto frameTexture = swapChain->GetCurrentTextureView();
+    if (!frameTexture) {
         std::cerr << "Cannot acquire next swap chain texture" << std::endl;
-        return;
+        std::exit(1);
     }
 
     const auto commandEncoderDesc = wgpu::CommandEncoderDescriptor{};
     const auto encoder = device.CreateCommandEncoder(&commandEncoderDesc);
 
-    { // BG
-        const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
-            .view = nextFrameTexture,
-            .loadOp = wgpu::LoadOp::Clear,
-            .storeOp = wgpu::StoreOp::Store,
-            .clearValue = clearColor,
-        };
+    const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
+        .view = frameTexture,
+        .loadOp = wgpu::LoadOp::Clear,
+        .storeOp = wgpu::StoreOp::Store,
+        .clearValue = clearColor,
+    };
 
-        const auto renderPassDesc = wgpu::RenderPassDescriptor{
-            .colorAttachmentCount = 1,
-            .colorAttachments = &mainScreenAttachment,
-        };
+    const auto renderPassDesc = wgpu::RenderPassDescriptor{
+        .colorAttachmentCount = 1,
+        .colorAttachments = &mainScreenAttachment,
+    };
 
-        const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
-        renderPass.PushDebugGroup("Draw");
+    const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
 
-        { // draw triangles
-            renderPass.SetPipeline(pipeline);
-            renderPass.SetVertexBuffer(0, vertexBuffer, 0, pointData.size() * sizeof(float));
-            renderPass.Draw(3, 1, 0, 0);
-        }
+    // draw triangle
+    renderPass.SetPipeline(pipeline);
+    renderPass.SetVertexBuffer(0, vertexBuffer, 0, pointData.size() * sizeof(float));
+    renderPass.Draw(3, 1, 0, 0);
 
-        renderPass.PopDebugGroup();
-        renderPass.End();
-    }
+    renderPass.End();
 
     // submit
     const auto cmdBufferDesc = wgpu::CommandBufferDescriptor{};
@@ -496,26 +371,21 @@ void Game::render()
     swapChain->Present();
 }
 
-void Game::quit()
-{
-    isRunning = false;
-}
-
-void Game::cleanup()
+void App::cleanup()
 {
     swapChain.reset();
     surface.reset();
 
-    // need to destroy the device so that the app doesn't crash on SDL_Quit
-    // kinda hacky, but works
+    // destroy device before window
     auto d = device.MoveToCHandle();
     wgpuDeviceDestroy(d);
 
-    SDL_Quit();
+    glfwDestroyWindow(window);
+    glfwTerminate();
 }
 
 int main()
 {
-    Game game;
-    game.start();
+    App app;
+    app.start();
 }
