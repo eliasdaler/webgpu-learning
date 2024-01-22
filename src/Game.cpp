@@ -74,6 +74,7 @@ struct DirectionalLight {
 };
 
 @group(0) @binding(0) var<uniform> fd: PerFrameData;
+@group(0) @binding(1) var<uniform> dirLight: DirectionalLight;
 
 struct MeshData {
     model: mat4x4f,
@@ -96,7 +97,6 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 
 @group(1) @binding(0) var texture: texture_2d<f32>;
 @group(1) @binding(1) var texSampler: sampler;
-@group(1) @binding(2) var<uniform> dirLight: DirectionalLight;
 
 fn calculateSpecularBP(NoH: f32) -> f32 {
     let shininess = 32.0 * 4.0;
@@ -429,10 +429,18 @@ void Game::initModelStuff()
 
     wgpu::BindGroupLayout perFrameDataGroupLayout;
     { // per frame data
-        const std::array<wgpu::BindGroupLayoutEntry, 1> bindGroupLayoutEntries{{
+        const std::array<wgpu::BindGroupLayoutEntry, 2> bindGroupLayoutEntries{{
             {
                 .binding = 0,
                 .visibility = wgpu::ShaderStage::Vertex,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::Uniform,
+                    },
+            },
+            {
+                .binding = 1,
+                .visibility = wgpu::ShaderStage::Fragment,
                 .buffer =
                     {
                         .type = wgpu::BufferBindingType::Uniform,
@@ -446,10 +454,14 @@ void Game::initModelStuff()
         };
         perFrameDataGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
 
-        const std::array<wgpu::BindGroupEntry, 1> bindings{{
+        const std::array<wgpu::BindGroupEntry, 2> bindings{{
             {
                 .binding = 0,
                 .buffer = frameDataBuffer,
+            },
+            {
+                .binding = 1,
+                .buffer = directionalLightBuffer,
             },
         }};
         const auto bindGroupDesc = wgpu::BindGroupDescriptor{
@@ -463,7 +475,7 @@ void Game::initModelStuff()
 
     wgpu::BindGroupLayout materialGroupLayout;
     { // material data
-        const std::array<wgpu::BindGroupLayoutEntry, 3> bindGroupLayoutEntries{{
+        const std::array<wgpu::BindGroupLayoutEntry, 2> bindGroupLayoutEntries{{
             {
                 .binding = 0,
                 .visibility = wgpu::ShaderStage::Fragment,
@@ -479,14 +491,6 @@ void Game::initModelStuff()
                 .sampler =
                     {
                         .type = wgpu::SamplerBindingType::Filtering,
-                    },
-            },
-            {
-                .binding = 2,
-                .visibility = wgpu::ShaderStage::Fragment,
-                .buffer =
-                    {
-                        .type = wgpu::BufferBindingType::Uniform,
                     },
             },
         }};
@@ -508,7 +512,7 @@ void Game::initModelStuff()
         };
         const auto textureView = texture.CreateView(&textureViewDesc);
 
-        const std::array<wgpu::BindGroupEntry, 3> bindings{{
+        const std::array<wgpu::BindGroupEntry, 2> bindings{{
             {
                 .binding = 0,
                 .textureView = textureView,
@@ -516,10 +520,6 @@ void Game::initModelStuff()
             {
                 .binding = 1,
                 .sampler = nearestSampler,
-            },
-            {
-                .binding = 2,
-                .buffer = directionalLightBuffer,
             },
         }};
         const auto bindGroupDesc = wgpu::BindGroupDescriptor{
@@ -557,7 +557,7 @@ void Game::initModelStuff()
             },
         }};
         const auto bindGroupDesc = wgpu::BindGroupDescriptor{
-            .layout = perFrameDataGroupLayout.Get(),
+            .layout = meshGroupLayout.Get(),
             .entryCount = bindings.size(),
             .entries = bindings.data(),
         };

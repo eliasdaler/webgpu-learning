@@ -92,17 +92,30 @@ struct VertexOutput {
     @location(0) color: vec3f,
 };
 
+struct PerFrameData {
+    tintColor: vec4f,
+};
+
+@group(0) @binding(0) var<uniform> fd: PerFrameData;
+@group(0) @binding(1) var<uniform> fd2: PerFrameData;
+
+@group(1) @binding(0) var<uniform> fd3: PerFrameData;
+@group(1) @binding(1) var<uniform> fd4: PerFrameData;
+
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
+
     out.position = vec4f(in.position, 0.0, 1.0);
-    out.color = in.color;
+    out.color = in.color * fd.tintColor.rgb;
+
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    return vec4f(in.color, 1.0);
+    let color = in.color;
+    return vec4f(color, 1.0);
 }
 )";
 
@@ -120,6 +133,10 @@ static void glfwErrorCallback(int error, const char* description)
     fprintf(stderr, "Error: %s\n", description);
 }
 } // end of anonymous namespace
+
+struct PerFrameData {
+    float tintColor[4];
+};
 
 class App {
 public:
@@ -147,6 +164,13 @@ private:
     wgpu::ShaderModule shaderModule;
     wgpu::RenderPipeline pipeline;
     wgpu::Buffer vertexBuffer;
+
+    wgpu::Buffer perFrameDataBuffer;
+    wgpu::Buffer perFrameDataBuffer2;
+    wgpu::Buffer perFrameDataBuffer3;
+
+    wgpu::BindGroup bindGroup;
+    wgpu::BindGroup secondBindGroup;
 };
 
 void App::start()
@@ -222,8 +246,33 @@ void App::init()
     createPipeline();
 }
 
+namespace
+{
+wgpu::Buffer createDataBuffer(const wgpu::Device& device, const wgpu::Queue& queue)
+{
+    const auto bufferDesc = wgpu::BufferDescriptor{
+        .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
+        .size = sizeof(PerFrameData),
+    };
+
+    auto buffer = device.CreateBuffer(&bufferDesc);
+
+    const auto pfd = PerFrameData{
+        .tintColor = {0.5f, 0.1f, 0.2f, 1.0f},
+    };
+    queue.WriteBuffer(buffer, 0, &pfd, sizeof(buffer));
+
+    return buffer;
+}
+
+}
+
 void App::createPipeline()
 {
+    perFrameDataBuffer = createDataBuffer(device, queue);
+    perFrameDataBuffer2 = createDataBuffer(device, queue);
+    perFrameDataBuffer3 = createDataBuffer(device, queue);
+
     { // create shader module
         auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
         shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
@@ -248,8 +297,98 @@ void App::createPipeline()
         queue.WriteBuffer(vertexBuffer, 0, vertexData.data(), bufferDesc.size);
     }
 
+    // per frame data
+    wgpu::BindGroupLayout perFrameDataGroupLayout;
+    {
+        std::array<wgpu::BindGroupLayoutEntry, 2> entries{{
+            {
+                .binding = 0,
+                .visibility = wgpu::ShaderStage::Vertex,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::Uniform,
+                    },
+            },
+            {
+                .binding = 1,
+                .visibility = wgpu::ShaderStage::Vertex,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::Uniform,
+                    },
+            },
+        }};
+
+        const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+            .entryCount = entries.size(),
+            .entries = entries.data(),
+        };
+        perFrameDataGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
+
+        const std::array<wgpu::BindGroupEntry, 2> bindings{{
+            {
+                .binding = 0,
+                .buffer = perFrameDataBuffer,
+            },
+            {
+                .binding = 1,
+                .buffer = perFrameDataBuffer2,
+            },
+        }};
+        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .layout = perFrameDataGroupLayout.Get(),
+            .entryCount = bindings.size(),
+            .entries = bindings.data(),
+        };
+
+        bindGroup = device.CreateBindGroup(&bindGroupDesc);
+    }
+
+    wgpu::BindGroupLayout secondPerFrameDataGroupLayout;
+    {
+        std::array<wgpu::BindGroupLayoutEntry, 1> entries{{
+            {
+                .binding = 0,
+                .visibility = wgpu::ShaderStage::Vertex,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::Uniform,
+                    },
+            },
+        }};
+
+        const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+            .entryCount = entries.size(),
+            .entries = entries.data(),
+        };
+        secondPerFrameDataGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
+
+        const std::array<wgpu::BindGroupEntry, 1> bindings{{
+            {
+                .binding = 0,
+                .buffer = perFrameDataBuffer3,
+            },
+        }};
+        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .layout = secondPerFrameDataGroupLayout.Get(),
+            .entryCount = bindings.size(),
+            .entries = bindings.data(),
+        };
+
+        secondBindGroup = device.CreateBindGroup(&bindGroupDesc);
+    }
+
     { // pipeline
+        std::array<wgpu::BindGroupLayout, 2> groupLayouts{
+            perFrameDataGroupLayout,
+            secondPerFrameDataGroupLayout,
+        };
+        const wgpu::PipelineLayoutDescriptor layoutDesc{
+            .bindGroupLayoutCount = groupLayouts.size(),
+            .bindGroupLayouts = groupLayouts.data(),
+        };
         wgpu::RenderPipelineDescriptor pipelineDesc{
+            .layout = device.CreatePipelineLayout(&layoutDesc),
             .primitive =
                 {
                     .topology = wgpu::PrimitiveTopology::TriangleList,
@@ -359,6 +498,8 @@ void App::render()
     // draw triangle
     renderPass.SetPipeline(pipeline);
     renderPass.SetVertexBuffer(0, vertexBuffer, 0, vertexData.size() * sizeof(float));
+    renderPass.SetBindGroup(0, bindGroup, 0, 0);
+    renderPass.SetBindGroup(1, secondBindGroup, 0, 0);
     renderPass.Draw(3, 1, 0, 0);
 
     renderPass.End();
