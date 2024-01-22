@@ -81,6 +81,20 @@ void defaultCompilationCallback(
     }
 }
 
+void defaultValidationErrorHandler(WGPUErrorType type, char const* message, void* userdata)
+{
+    if (type == (WGPUErrorType)wgpu::ErrorType::NoError) {
+        return;
+    }
+
+    std::cout << "Validation error: type " << type;
+    if (message) {
+        std::cout << " (" << message << ")";
+    }
+    std::cout << std::endl;
+    std::exit(1);
+};
+
 const char* shaderSource = R"(
 struct VertexInput {
     @location(0) position: vec2f,
@@ -467,7 +481,10 @@ void App::loop()
 {
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
+        device.PushErrorScope(wgpu::ErrorFilter::Validation);
         render();
+        device.PopErrorScope(defaultValidationErrorHandler, nullptr);
+        instance.ProcessEvents();
     }
 }
 
@@ -502,7 +519,7 @@ void App::render()
     // draw triangle
     renderPass.SetPipeline(pipeline);
     renderPass.SetVertexBuffer(0, vertexBuffer, 0, vertexData.size() * sizeof(float));
-    renderPass.SetBindGroup(0, bindGroup, 0, 0); // ISSUEMARK3: comment out this line
+    // renderPass.SetBindGroup(0, bindGroup, 0, 0); // ISSUEMARK3: comment out this line
     renderPass.SetBindGroup(1, secondBindGroup, 0, 0);
     renderPass.Draw(3, 1, 0, 0);
 
