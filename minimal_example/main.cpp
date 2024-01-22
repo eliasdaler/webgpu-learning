@@ -519,7 +519,7 @@ void App::render()
     // draw triangle
     renderPass.SetPipeline(pipeline);
     renderPass.SetVertexBuffer(0, vertexBuffer, 0, vertexData.size() * sizeof(float));
-    // renderPass.SetBindGroup(0, bindGroup, 0, 0); // ISSUEMARK3: comment out this line
+    renderPass.SetBindGroup(0, bindGroup, 0, 0); // ISSUEMARK3: comment out this line
     renderPass.SetBindGroup(1, secondBindGroup, 0, 0);
     renderPass.Draw(3, 1, 0, 0);
 
