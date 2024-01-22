@@ -1,12 +1,10 @@
-# Learning webgpu
+# Learning WebGPU
 
-Following this: https://eliemichel.github.io/LearnWebGPU/
-
+## Progress
 
 19.12.23 - first triangle
 
 ![triangle](screenshots/1_triangle.png)
-
 
 20.12.23 - textured quad
 
@@ -16,7 +14,9 @@ Following this: https://eliemichel.github.io/LearnWebGPU/
 
 ![model](screenshots/3_model.png)
 
-Expect a cute animated cat to appear if successful.
+22.01.24 - simple Blinn-Phong lighting
+
+![model](screenshots/4_blinn_phong.png)
 
 ## Building
 

@@ -72,6 +72,7 @@ private:
     struct DirectionalLightData {
         glm::vec4 directionAndMisc; // [pos.x, pos.y, pos.z, unused]
         glm::vec4 colorAndIntensity; // [color.r, color.g, color.b, intensity]
+        glm::vec4 cameraPos;
     };
     wgpu::Buffer directionalLightBuffer;
 

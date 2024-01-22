@@ -4,8 +4,8 @@ int main()
 {
     Game game;
     game.start({
-        .screenWidth = 640,
-        .screenHeight = 480,
+        .screenWidth = 1280,
+        .screenHeight = 960,
         .windowTitle = "WebGPU test",
     });
 }

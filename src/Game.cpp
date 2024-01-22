@@ -57,8 +57,9 @@ struct VertexInput {
 
 struct VertexOutput {
     @builtin(position) position: vec4f,
-    @location(0) uv: vec2f,
-    @location(1) normal: vec3f,
+    @location(0) pos: vec3f,
+    @location(1) uv: vec2f,
+    @location(2) normal: vec3f,
 };
 
 struct PerFrameData {
@@ -68,6 +69,7 @@ struct PerFrameData {
 struct DirectionalLight {
     directionAndMisc: vec4f,
     colorAndIntensity: vec4f,
+    cameraPos: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> fd: PerFrameData;
@@ -82,7 +84,9 @@ struct MeshData {
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
 
-    out.position = fd.viewProj * mesh.model * vec4(in.position, 1.0);
+    let worldPos = mesh.model * vec4(in.position, 1.0);
+    out.position = fd.viewProj * worldPos;
+    out.pos = worldPos.xyz;
     out.uv = in.uv;
     out.normal = (mesh.model * vec4(in.normal, 1.0)).xyz;
 
@@ -93,15 +97,46 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 @group(1) @binding(1) var texSampler: sampler;
 @group(1) @binding(2) var<uniform> dirLight: DirectionalLight;
 
+fn calculateSpecularBP(NoH: f32) -> f32 {
+    let shininess = 32.0 * 4.0;
+    return pow(NoH, shininess);
+}
+
+fn blinnPhongBRDF(diffuse: vec3f, n: vec3f, v: vec3f, l: vec3f, h: vec3f) -> vec3f {
+    let Fd = diffuse;
+
+    // specular
+    // TODO: read from spec texture / pass spec param
+    let specularColor = diffuse * 0.5;
+    let NoH = saturate(dot(n, h));
+    let Fr = specularColor * calculateSpecularBP(NoH);
+
+    return Fd + Fr;
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    let lightDir = dirLight.directionAndMisc.xyz;
-    let lightColor = dirLight.colorAndIntensity.rgb;
-    let normal = normalize(in.normal);
+    let diffuse = textureSample(texture, texSampler, in.uv).rgb;
 
-    let diffuseColor = textureSample(texture, texSampler, in.uv).rgb;
-    let NoL = dot(normal, -lightDir);
-    let fragColor = diffuseColor * lightColor * NoL;
+    let ambient = vec3(0.1, 0.1, 0.1);
+
+    let lightDir = -dirLight.directionAndMisc.xyz;
+    let lightColor = dirLight.colorAndIntensity.rgb;
+
+    let viewPos = dirLight.cameraPos.xyz;
+
+    let n = normalize(in.normal);
+    let l = normalize(lightDir - in.pos);
+    let v = normalize(viewPos - in.pos);
+    let h = normalize(v + l);
+
+    let fr = blinnPhongBRDF(diffuse, n, v, l, h);
+
+    let NoL = saturate(dot(n, l));
+    var fragColor = fr * lightColor * NoL;
+
+    // ambient
+    fragColor += diffuse * ambient;
 
     let color = pow(fragColor, vec3(1/2.2f));
     return vec4f(color, 1.0);
@@ -312,6 +347,7 @@ void Game::init()
         const auto dirLightData = DirectionalLightData{
             .directionAndMisc = {lightDir, 0.f},
             .colorAndIntensity = {lightColor, lightIntensity},
+            .cameraPos = glm::vec4{cameraPos, 1.f},
         };
         queue.WriteBuffer(directionalLightBuffer, 0, &dirLightData, sizeof(DirectionalLightData));
     }
