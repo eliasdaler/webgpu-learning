@@ -65,12 +65,12 @@ struct VertexOutput {
 
 struct PerFrameData {
     viewProj: mat4x4f,
+    cameraPos: vec4f,
 };
 
 struct DirectionalLight {
     directionAndMisc: vec4f,
     colorAndIntensity: vec4f,
-    cameraPos: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> fd: PerFrameData;
@@ -124,7 +124,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let lightDir = -dirLight.directionAndMisc.xyz;
     let lightColor = dirLight.colorAndIntensity.rgb;
 
-    let viewPos = dirLight.cameraPos.xyz;
+    let viewPos = fd.cameraPos.xyz;
 
     let n = normalize(in.normal);
     let l = normalize(lightDir - in.pos);
@@ -329,6 +329,7 @@ void Game::init()
 
         const auto ud = PerFrameData{
             .viewProj = cameraProj * cameraView,
+            .cameraPos = glm::vec4(cameraPos, 1.f),
         };
         queue.WriteBuffer(frameDataBuffer, 0, &ud, sizeof(PerFrameData));
     }
@@ -348,7 +349,6 @@ void Game::init()
         const auto dirLightData = DirectionalLightData{
             .directionAndMisc = {lightDir, 0.f},
             .colorAndIntensity = {lightColor, lightIntensity},
-            .cameraPos = glm::vec4{cameraPos, 1.f},
         };
         queue.WriteBuffer(directionalLightBuffer, 0, &dirLightData, sizeof(DirectionalLightData));
     }
@@ -432,7 +432,7 @@ void Game::initModelStuff()
         const std::array<wgpu::BindGroupLayoutEntry, 2> bindGroupLayoutEntries{{
             {
                 .binding = 0,
-                .visibility = wgpu::ShaderStage::Vertex,
+                .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
                 .buffer =
                     {
                         .type = wgpu::BufferBindingType::Uniform,
@@ -957,6 +957,7 @@ void Game::update(float dt)
     { // per frame data
         PerFrameData ud{
             .viewProj = cameraProj * cameraView,
+            .cameraPos = glm::vec4(cameraPos, 1.f),
         };
         queue.WriteBuffer(frameDataBuffer, 0, &ud, sizeof(PerFrameData));
     }
