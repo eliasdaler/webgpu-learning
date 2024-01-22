@@ -106,7 +106,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 )";
 
 /* clang-format off */
-std::vector<float> pointData = {
+std::vector<float> vertexData = {
     // x    y    r    g    b
     -0.5, -0.5, 1.0, 0.0, 0.0, //
     +0.5, -0.5, 0.0, 1.0, 0.0, //
@@ -240,11 +240,11 @@ void App::createPipeline()
     { // vertex buffer
         const auto bufferDesc = wgpu::BufferDescriptor{
             .usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst,
-            .size = pointData.size() * sizeof(float),
+            .size = vertexData.size() * sizeof(float),
         };
 
         vertexBuffer = device.CreateBuffer(&bufferDesc);
-        queue.WriteBuffer(vertexBuffer, 0, pointData.data(), bufferDesc.size);
+        queue.WriteBuffer(vertexBuffer, 0, vertexData.data(), bufferDesc.size);
     }
 
     { // pipeline
@@ -357,7 +357,7 @@ void App::render()
 
     // draw triangle
     renderPass.SetPipeline(pipeline);
-    renderPass.SetVertexBuffer(0, vertexBuffer, 0, pointData.size() * sizeof(float));
+    renderPass.SetVertexBuffer(0, vertexBuffer, 0, vertexData.size() * sizeof(float));
     renderPass.Draw(3, 1, 0, 0);
 
     renderPass.End();
