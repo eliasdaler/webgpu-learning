@@ -65,15 +65,16 @@ struct VertexOutput {
 
 struct PerFrameData {
     viewProj: mat4x4f,
+    cameraPos: vec4f,
 };
 
 struct DirectionalLight {
     directionAndMisc: vec4f,
     colorAndIntensity: vec4f,
-    cameraPos: vec4f,
 };
 
 @group(0) @binding(0) var<uniform> fd: PerFrameData;
+@group(0) @binding(1) var<uniform> dirLight: DirectionalLight;
 
 struct MeshData {
     model: mat4x4f,
@@ -96,7 +97,6 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 
 @group(1) @binding(0) var texture: texture_2d<f32>;
 @group(1) @binding(1) var texSampler: sampler;
-@group(1) @binding(2) var<uniform> dirLight: DirectionalLight;
 
 fn calculateSpecularBP(NoH: f32) -> f32 {
     let shininess = 32.0 * 4.0;
@@ -124,7 +124,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let lightDir = -dirLight.directionAndMisc.xyz;
     let lightColor = dirLight.colorAndIntensity.rgb;
 
-    let viewPos = dirLight.cameraPos.xyz;
+    let viewPos = fd.cameraPos.xyz;
 
     let n = normalize(in.normal);
     let l = normalize(lightDir - in.pos);
@@ -329,6 +329,7 @@ void Game::init()
 
         const auto ud = PerFrameData{
             .viewProj = cameraProj * cameraView,
+            .cameraPos = glm::vec4(cameraPos, 1.f),
         };
         queue.WriteBuffer(frameDataBuffer, 0, &ud, sizeof(PerFrameData));
     }
@@ -348,7 +349,6 @@ void Game::init()
         const auto dirLightData = DirectionalLightData{
             .directionAndMisc = {lightDir, 0.f},
             .colorAndIntensity = {lightColor, lightIntensity},
-            .cameraPos = glm::vec4{cameraPos, 1.f},
         };
         queue.WriteBuffer(directionalLightBuffer, 0, &dirLightData, sizeof(DirectionalLightData));
     }
@@ -429,10 +429,18 @@ void Game::initModelStuff()
 
     wgpu::BindGroupLayout perFrameDataGroupLayout;
     { // per frame data
-        const std::array<wgpu::BindGroupLayoutEntry, 1> bindGroupLayoutEntries{{
+        const std::array<wgpu::BindGroupLayoutEntry, 2> bindGroupLayoutEntries{{
             {
                 .binding = 0,
-                .visibility = wgpu::ShaderStage::Vertex,
+                .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::Uniform,
+                    },
+            },
+            {
+                .binding = 1,
+                .visibility = wgpu::ShaderStage::Fragment,
                 .buffer =
                     {
                         .type = wgpu::BufferBindingType::Uniform,
@@ -446,10 +454,14 @@ void Game::initModelStuff()
         };
         perFrameDataGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
 
-        const std::array<wgpu::BindGroupEntry, 1> bindings{{
+        const std::array<wgpu::BindGroupEntry, 2> bindings{{
             {
                 .binding = 0,
                 .buffer = frameDataBuffer,
+            },
+            {
+                .binding = 1,
+                .buffer = directionalLightBuffer,
             },
         }};
         const auto bindGroupDesc = wgpu::BindGroupDescriptor{
@@ -463,7 +475,7 @@ void Game::initModelStuff()
 
     wgpu::BindGroupLayout materialGroupLayout;
     { // material data
-        const std::array<wgpu::BindGroupLayoutEntry, 3> bindGroupLayoutEntries{{
+        const std::array<wgpu::BindGroupLayoutEntry, 2> bindGroupLayoutEntries{{
             {
                 .binding = 0,
                 .visibility = wgpu::ShaderStage::Fragment,
@@ -479,14 +491,6 @@ void Game::initModelStuff()
                 .sampler =
                     {
                         .type = wgpu::SamplerBindingType::Filtering,
-                    },
-            },
-            {
-                .binding = 2,
-                .visibility = wgpu::ShaderStage::Fragment,
-                .buffer =
-                    {
-                        .type = wgpu::BufferBindingType::Uniform,
                     },
             },
         }};
@@ -508,7 +512,7 @@ void Game::initModelStuff()
         };
         const auto textureView = texture.CreateView(&textureViewDesc);
 
-        const std::array<wgpu::BindGroupEntry, 3> bindings{{
+        const std::array<wgpu::BindGroupEntry, 2> bindings{{
             {
                 .binding = 0,
                 .textureView = textureView,
@@ -516,10 +520,6 @@ void Game::initModelStuff()
             {
                 .binding = 1,
                 .sampler = nearestSampler,
-            },
-            {
-                .binding = 2,
-                .buffer = directionalLightBuffer,
             },
         }};
         const auto bindGroupDesc = wgpu::BindGroupDescriptor{
@@ -557,7 +557,7 @@ void Game::initModelStuff()
             },
         }};
         const auto bindGroupDesc = wgpu::BindGroupDescriptor{
-            .layout = perFrameDataGroupLayout.Get(),
+            .layout = meshGroupLayout.Get(),
             .entryCount = bindings.size(),
             .entries = bindings.data(),
         };
@@ -957,6 +957,7 @@ void Game::update(float dt)
     { // per frame data
         PerFrameData ud{
             .viewProj = cameraProj * cameraView,
+            .cameraPos = glm::vec4(cameraPos, 1.f),
         };
         queue.WriteBuffer(frameDataBuffer, 0, &ud, sizeof(PerFrameData));
     }
