@@ -69,6 +69,12 @@ private:
     };
     wgpu::Buffer meshDataBuffer;
 
+    struct DirectionalLightData {
+        glm::vec4 directionAndMisc; // [pos.x, pos.y, pos.z, unused]
+        glm::vec4 colorAndIntensity; // [color.r, color.g, color.b, intensity]
+    };
+    wgpu::Buffer directionalLightBuffer;
+
     wgpu::TextureFormat depthTextureFormat{wgpu::TextureFormat::Depth24Plus};
     wgpu::Texture depthTexture;
     wgpu::TextureView depthTextureView;

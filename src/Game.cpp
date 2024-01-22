@@ -31,16 +31,19 @@ void defaultValidationErrorHandler(WGPUErrorType type, char const* message, void
     std::exit(1);
 };
 
-// TODO: doesn't seem to be called even when shader has errors?
-// (Report Dawn bug?)
 void defaultCompilationCallback(
     WGPUCompilationInfoRequestStatus status,
     WGPUCompilationInfo const* compilationInfo,
     void* userdata)
 {
-    if (status == (WGPUCompilationInfoRequestStatus)wgpu::CompilationInfoRequestStatus::Error) {
-        std::cout << compilationInfo << std::endl;
-        std::exit(1);
+    const auto* label = reinterpret_cast<const char*>(userdata);
+    for (std::size_t i = 0; i < compilationInfo->messageCount; ++i) {
+        const auto message = compilationInfo->messages[i];
+        if (message.type == (WGPUCompilationMessageType)wgpu::CompilationMessageType::Error) {
+            std::cout << "Error: ";
+        }
+        std::cout << "module \"" << label << "\": " << message.message << "(" << message.linePos
+                  << ":" << message.linePos << ")" << std::endl;
     }
 }
 
@@ -55,37 +58,52 @@ struct VertexInput {
 struct VertexOutput {
     @builtin(position) position: vec4f,
     @location(0) uv: vec2f,
+    @location(1) normal: vec3f,
 };
 
 struct PerFrameData {
     viewProj: mat4x4f,
 };
 
+struct DirectionalLight {
+    directionAndMisc: vec4f,
+    colorAndIntensity: vec4f,
+};
+
+@group(0) @binding(0) var<uniform> fd: PerFrameData;
+
 struct MeshData {
     model: mat4x4f,
 };
 
-@group(0) @binding(0) var<uniform> fd: PerFrameData;
 @group(2) @binding(0) var<uniform> mesh: MeshData;
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
 
-    var position = fd.viewProj * mesh.model * vec4(in.position, 1.0);
-    out.position = position;
+    out.position = fd.viewProj * mesh.model * vec4(in.position, 1.0);
     out.uv = in.uv;
+    out.normal = (mesh.model * vec4(in.normal, 1.0)).xyz;
 
     return out;
 }
 
 @group(1) @binding(0) var texture: texture_2d<f32>;
 @group(1) @binding(1) var texSampler: sampler;
+@group(1) @binding(2) var<uniform> dirLight: DirectionalLight;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    let textureColor = textureSample(texture, texSampler, in.uv).rgb;
-    let color = pow(textureColor, vec3(1/2.2f));
+    let lightDir = dirLight.directionAndMisc.xyz;
+    let lightColor = dirLight.colorAndIntensity.rgb;
+    let normal = normalize(in.normal);
+
+    let diffuseColor = textureSample(texture, texSampler, in.uv).rgb;
+    let NoL = dot(normal, -lightDir);
+    let fragColor = diffuseColor * lightColor * NoL;
+
+    let color = pow(fragColor, vec3(1/2.2f));
     return vec4f(color, 1.0);
 }
 )";
@@ -279,6 +297,25 @@ void Game::init()
         queue.WriteBuffer(frameDataBuffer, 0, &ud, sizeof(PerFrameData));
     }
 
+    { // dir light buffer
+        const auto bufferDesc = wgpu::BufferDescriptor{
+            .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
+            .size = sizeof(DirectionalLightData),
+        };
+
+        directionalLightBuffer = device.CreateBuffer(&bufferDesc);
+
+        const auto lightDir = glm::normalize(glm::vec3{-0.5, -0.7, -1});
+        const auto lightColor = glm::vec3{1.0, 0.75, 0.38};
+        const auto lightIntensity = 1.0f;
+
+        const auto dirLightData = DirectionalLightData{
+            .directionAndMisc = {lightDir, 0.f},
+            .colorAndIntensity = {lightColor, lightIntensity},
+        };
+        queue.WriteBuffer(directionalLightBuffer, 0, &dirLightData, sizeof(DirectionalLightData));
+    }
+
     { // mesh data buffer
         const auto bufferDesc = wgpu::BufferDescriptor{
             .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
@@ -310,7 +347,7 @@ void Game::initModelStuff()
         };
 
         shaderModule = device.CreateShaderModule(&shaderDesc);
-        shaderModule.GetCompilationInfo(defaultCompilationCallback, nullptr);
+        shaderModule.GetCompilationInfo(defaultCompilationCallback, (void*)"model");
     }
 
     // load model
@@ -389,7 +426,7 @@ void Game::initModelStuff()
 
     wgpu::BindGroupLayout materialGroupLayout;
     { // material data
-        const std::array<wgpu::BindGroupLayoutEntry, 2> bindGroupLayoutEntries{{
+        const std::array<wgpu::BindGroupLayoutEntry, 3> bindGroupLayoutEntries{{
             {
                 .binding = 0,
                 .visibility = wgpu::ShaderStage::Fragment,
@@ -405,6 +442,14 @@ void Game::initModelStuff()
                 .sampler =
                     {
                         .type = wgpu::SamplerBindingType::Filtering,
+                    },
+            },
+            {
+                .binding = 2,
+                .visibility = wgpu::ShaderStage::Fragment,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::Uniform,
                     },
             },
         }};
@@ -426,7 +471,7 @@ void Game::initModelStuff()
         };
         const auto textureView = texture.CreateView(&textureViewDesc);
 
-        const std::array<wgpu::BindGroupEntry, 2> bindings{{
+        const std::array<wgpu::BindGroupEntry, 3> bindings{{
             {
                 .binding = 0,
                 .textureView = textureView,
@@ -434,6 +479,10 @@ void Game::initModelStuff()
             {
                 .binding = 1,
                 .sampler = nearestSampler,
+            },
+            {
+                .binding = 2,
+                .buffer = directionalLightBuffer,
             },
         }};
         const auto bindGroupDesc = wgpu::BindGroupDescriptor{
@@ -615,7 +664,7 @@ void Game::initSpriteStuff()
         };
 
         spriteShaderModule = device.CreateShaderModule(&shaderDesc);
-        shaderModule.GetCompilationInfo(defaultCompilationCallback, nullptr);
+        shaderModule.GetCompilationInfo(defaultCompilationCallback, (void*)"sprite");
     }
 
     spriteTexture = util::loadTexture(
@@ -643,13 +692,13 @@ void Game::initSpriteStuff()
             },
         }};
 
-        const wgpu::BindGroupLayoutDescriptor bindGroupLayoutDesc{
+        const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
             .entryCount = bindingLayoutEntries.size(),
             .entries = bindingLayoutEntries.data(),
         };
         bindGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
 
-        const wgpu::TextureViewDescriptor textureViewDesc{
+        const auto textureViewDesc = wgpu::TextureViewDescriptor{
             .format = wgpu::TextureFormat::RGBA8UnormSrgb,
             .dimension = wgpu::TextureViewDimension::e2D,
             .baseMipLevel = 0,
@@ -669,7 +718,7 @@ void Game::initSpriteStuff()
                  .binding = 1,
                  .sampler = nearestSampler,
              }}};
-        const wgpu::BindGroupDescriptor bindGroupDesc{
+        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
             .layout = bindGroupLayout.Get(),
             .entryCount = bindings.size(),
             .entries = bindings.data(),
@@ -889,8 +938,6 @@ void Game::update(float dt)
 
 void Game::render()
 {
-    device.PushErrorScope(wgpu::ErrorFilter::Validation);
-
     // cornflower blue <3
     static const wgpu::Color clearColor{100.f / 255.f, 149.f / 255.f, 237.f / 255.f, 255.f / 255.f};
 
@@ -989,8 +1036,6 @@ void Game::render()
 
     // flush
     swapChain->Present();
-
-    device.PopErrorScope(defaultValidationErrorHandler, nullptr);
 }
 
 void Game::quit()
