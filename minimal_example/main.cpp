@@ -158,7 +158,6 @@ private:
     wgpu::RenderPipeline pipeline;
 
     wgpu::Buffer vertexBuffer;
-    wgpu::Buffer indexBuffer;
 };
 
 namespace
@@ -217,17 +216,6 @@ std::vector<float> pointData = {
 };
 /* clang-format on */
 
-std::vector<std::uint16_t> indexData = {
-    0,
-    1,
-    2, // Triangle #0
-    0,
-    0,
-    0, // Fake triangle (so that indexData is divisible by 4)
-};
-
-int indexCount = static_cast<int>(indexData.size());
-
 } // end of anonymous namespace
 
 void Game::start()
@@ -250,14 +238,6 @@ void Game::init()
 
     const auto adapterOpts = wgpu::RequestAdapterOptions{};
     adapter = util::requestAdapter(instance, &adapterOpts);
-
-    { // report supported limits
-        auto supportedLimits = wgpu::SupportedLimits{};
-        adapter.GetLimits(&supportedLimits);
-        std::cout << "max uniform buffer size: "
-                  << supportedLimits.limits.maxUniformBufferBindingSize << std::endl;
-        std::cout << "max bind groups: " << supportedLimits.limits.maxBindGroups << std::endl;
-    }
 
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) < 0) {
@@ -300,17 +280,7 @@ void Game::init()
     };
     device.SetUncapturedErrorCallback(onDeviceError, nullptr);
 
-    device.SetDeviceLostCallback(
-        [](WGPUDeviceLostReason reason, char const* message, void* userdata) {
-            // std::cout << "WGPU device lost" << std::endl;
-        },
-        nullptr);
-
     queue = device.GetQueue();
-    auto onQueueWorkDone = [](WGPUQueueWorkDoneStatus status, void* /* pUserData */) {
-        // std::cout << "Queued work finished with status: " << status << std::endl;
-    };
-    queue.OnSubmittedWorkDone(onQueueWorkDone, nullptr);
 
     swapChainFormat = wgpu::TextureFormat::BGRA8Unorm;
     { // init swapchain
@@ -353,16 +323,6 @@ void Game::initModelStuff()
 
         vertexBuffer = device.CreateBuffer(&bufferDesc);
         queue.WriteBuffer(vertexBuffer, 0, pointData.data(), bufferDesc.size);
-    }
-
-    { // index buffer
-        const auto bufferDesc = wgpu::BufferDescriptor{
-            .usage = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst,
-            .size = indexData.size() * sizeof(std::uint16_t),
-        };
-
-        indexBuffer = device.CreateBuffer(&bufferDesc);
-        queue.WriteBuffer(indexBuffer, 0, indexData.data(), bufferDesc.size);
     }
 
     {
@@ -520,9 +480,7 @@ void Game::render()
         { // draw triangles
             renderPass.SetPipeline(pipeline);
             renderPass.SetVertexBuffer(0, vertexBuffer, 0, pointData.size() * sizeof(float));
-            renderPass.SetIndexBuffer(
-                indexBuffer, wgpu::IndexFormat::Uint16, 0, indexCount * sizeof(std::uint16_t));
-            renderPass.DrawIndexed(indexCount, 1, 0, 0, 0);
+            renderPass.Draw(3, 1, 0, 0);
         }
 
         renderPass.PopDebugGroup();
