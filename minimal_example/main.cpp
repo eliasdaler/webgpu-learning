@@ -481,9 +481,11 @@ void App::loop()
 {
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
+
         device.PushErrorScope(wgpu::ErrorFilter::Validation);
         render();
         device.PopErrorScope(defaultValidationErrorHandler, nullptr);
+
         instance.ProcessEvents();
     }
 }
