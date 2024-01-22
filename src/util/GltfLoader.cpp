@@ -208,7 +208,7 @@ Model loadModel(const std::filesystem::path& path)
         printf("WARN: %s\n", warn.c_str());
     }
     if (!res) {
-        printf("Failed to load glTF scene: %s\n", path.c_str());
+        printf("Failed to load glTF scene: %s\n", path.string().c_str());
         if (!err.empty()) {
             printf("ERR: %s\n", err.c_str());
         }
