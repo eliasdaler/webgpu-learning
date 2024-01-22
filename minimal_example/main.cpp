@@ -325,6 +325,8 @@ void App::createPipeline()
         };
         perFrameDataGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
 
+        // ISSUEMARK1: replace "2" with "3" below
+        // const std::array<wgpu::BindGroupEntry, 3> bindings{{
         const std::array<wgpu::BindGroupEntry, 2> bindings{{
             {
                 .binding = 0,
@@ -370,7 +372,9 @@ void App::createPipeline()
             },
         }};
         const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            // ISSUEMARK2: replace "secondPerFrameDataGroupLayout" with perFrameDataGroupLayout
             .layout = secondPerFrameDataGroupLayout.Get(),
+            // .layout = perFrameDataGroupLayout.Get(),
             .entryCount = bindings.size(),
             .entries = bindings.data(),
         };
@@ -498,7 +502,7 @@ void App::render()
     // draw triangle
     renderPass.SetPipeline(pipeline);
     renderPass.SetVertexBuffer(0, vertexBuffer, 0, vertexData.size() * sizeof(float));
-    renderPass.SetBindGroup(0, bindGroup, 0, 0);
+    renderPass.SetBindGroup(0, bindGroup, 0, 0); // ISSUEMARK3: comment out this line
     renderPass.SetBindGroup(1, secondBindGroup, 0, 0);
     renderPass.Draw(3, 1, 0, 0);
 
