@@ -26,14 +26,19 @@ public:
 private:
     void init();
     void initModelStuff();
+    void createModelDrawingPipeline();
     void initSpriteStuff();
+    void createFloorTile();
     void initCamera();
+    void initImGui();
 
     void loop();
     void update(float dt);
+    void updateDevTools(float dt);
     void render();
     void quit();
     void cleanup();
+    void shutdownImGui();
 
     bool isRunning{false};
 
@@ -68,7 +73,6 @@ private:
     struct MeshData {
         glm::mat4 model;
     };
-    wgpu::Buffer meshDataBuffer;
 
     struct DirectionalLightData {
         glm::vec4 directionAndMisc; // [pos.x, pos.y, pos.z, unused]
@@ -80,9 +84,12 @@ private:
     wgpu::Texture depthTexture;
     wgpu::TextureView depthTextureView;
 
-    wgpu::Buffer vertexBuffer;
-    wgpu::Buffer indexBuffer;
-    wgpu::Texture texture;
+    wgpu::Buffer modelVertexBuffer;
+    wgpu::Buffer modelIndexBuffer;
+    wgpu::Texture modelTexture;
+    wgpu::Buffer modelDataBuffer;
+    Model model;
+    float modelRotationAngle{0.f};
 
     wgpu::ShaderModule spriteShaderModule;
     wgpu::BindGroup spriteBindGroup;
@@ -94,12 +101,16 @@ private:
 
     wgpu::Sampler nearestSampler;
 
-    Model model;
-
     glm::vec3 cameraPos;
     glm::vec3 cameraDirection;
     glm::mat4 cameraView;
     glm::mat4 cameraProj;
 
-    float meshRotationAngle{0.f};
+    wgpu::Buffer tileVertexBuffer;
+    wgpu::Buffer tileIndexBuffer;
+    wgpu::Texture tileTexture;
+    wgpu::BindGroup tileMaterialBindGroup;
+    wgpu::BindGroup tileMeshBindGroup;
+    wgpu::Buffer tileMeshDataBuffer;
+    Model tileModel;
 };

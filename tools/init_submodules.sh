@@ -1,2 +1,3 @@
 #!/bin/bash
-git submodule update --init --recursive --depth 1
+set -x
+git submodule update --init --depth 1

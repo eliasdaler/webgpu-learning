@@ -16,6 +16,9 @@
 #include <iostream>
 #include <vector>
 
+#include <backends/imgui_impl_sdl2.h>
+#include <backends/imgui_impl_wgpu.h>
+
 namespace
 {
 void defaultValidationErrorHandler(WGPUErrorType type, char const* message, void* userdata)
@@ -323,7 +326,7 @@ void Game::init()
     };
     nearestSampler = device.CreateSampler(&samplerDesc);
 
-    cameraPos = glm::vec3(0.0f, 1.0f, 3.0f);
+    cameraPos = glm::vec3(0.0f, 3.0f, 5.0f);
     initCamera();
 
     { // per frame data buffer
@@ -366,16 +369,19 @@ void Game::init()
             .size = sizeof(MeshData),
         };
 
-        meshDataBuffer = device.CreateBuffer(&bufferDesc);
+        modelDataBuffer = device.CreateBuffer(&bufferDesc);
 
         const auto md = MeshData{
             .model = glm::mat4{1.f},
         };
-        queue.WriteBuffer(meshDataBuffer, 0, &md, sizeof(MeshData));
+        queue.WriteBuffer(modelDataBuffer, 0, &md, sizeof(MeshData));
     }
 
     initModelStuff();
     initSpriteStuff();
+    createFloorTile();
+
+    initImGui();
 }
 
 void Game::initModelStuff()
@@ -401,7 +407,7 @@ void Game::initModelStuff()
     auto& mesh = model.meshes[0];
 
     // load diffuse texture
-    texture = util::
+    modelTexture = util::
         loadTexture(device, queue, mesh.diffuseTexturePath, wgpu::TextureFormat::RGBA8UnormSrgb);
 
     { // create depth dexture
@@ -517,7 +523,7 @@ void Game::initModelStuff()
             .arrayLayerCount = 1,
             .aspect = wgpu::TextureAspect::All,
         };
-        const auto textureView = texture.CreateView(&textureViewDesc);
+        const auto textureView = modelTexture.CreateView(&textureViewDesc);
 
         const std::array<wgpu::BindGroupEntry, 2> bindings{{
             {
@@ -560,7 +566,7 @@ void Game::initModelStuff()
         const std::array<wgpu::BindGroupEntry, 1> bindings{{
             {
                 .binding = 0,
-                .buffer = meshDataBuffer,
+                .buffer = modelDataBuffer,
             },
         }};
         const auto bindGroupDesc = wgpu::BindGroupDescriptor{
@@ -578,8 +584,8 @@ void Game::initModelStuff()
             .size = mesh.vertices.size() * sizeof(Mesh::Vertex),
         };
 
-        vertexBuffer = device.CreateBuffer(&bufferDesc);
-        queue.WriteBuffer(vertexBuffer, 0, mesh.vertices.data(), bufferDesc.size);
+        modelVertexBuffer = device.CreateBuffer(&bufferDesc);
+        queue.WriteBuffer(modelVertexBuffer, 0, mesh.vertices.data(), bufferDesc.size);
     }
 
     { // index buffer
@@ -588,8 +594,8 @@ void Game::initModelStuff()
             .size = mesh.indices.size() * sizeof(std::uint16_t),
         };
 
-        indexBuffer = device.CreateBuffer(&bufferDesc);
-        queue.WriteBuffer(indexBuffer, 0, mesh.indices.data(), bufferDesc.size);
+        modelIndexBuffer = device.CreateBuffer(&bufferDesc);
+        queue.WriteBuffer(modelIndexBuffer, 0, mesh.indices.data(), bufferDesc.size);
     }
 
     {
@@ -887,6 +893,157 @@ void Game::initCamera()
     cameraProj = glm::perspective(glm::radians(fov), aspect, 0.1f, 100.0f);
 }
 
+void Game::createFloorTile()
+{
+    tileTexture = util::loadTexture(
+        device,
+        queue,
+        "assets/textures/wood_floor_deck_diff_512px.jpg",
+        wgpu::TextureFormat::RGBA8UnormSrgb);
+
+    tileModel = util::loadModel("assets/models/tile.gltf");
+    // let's assume one mesh for now
+    assert(model.meshes.size() == 1);
+    auto& mesh = tileModel.meshes[0];
+
+    { // vertex buffer
+        const auto bufferDesc = wgpu::BufferDescriptor{
+            .usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst,
+            .size = mesh.vertices.size() * sizeof(Mesh::Vertex),
+        };
+
+        tileVertexBuffer = device.CreateBuffer(&bufferDesc);
+        queue.WriteBuffer(tileVertexBuffer, 0, mesh.vertices.data(), bufferDesc.size);
+    }
+
+    { // index buffer
+        const auto bufferDesc = wgpu::BufferDescriptor{
+            .usage = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst,
+            .size = mesh.indices.size() * sizeof(std::uint16_t),
+        };
+
+        tileIndexBuffer = device.CreateBuffer(&bufferDesc);
+        queue.WriteBuffer(tileIndexBuffer, 0, mesh.indices.data(), bufferDesc.size);
+    }
+
+    { // mesh data buffer
+        const auto bufferDesc = wgpu::BufferDescriptor{
+            .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
+            .size = sizeof(MeshData),
+        };
+
+        tileMeshDataBuffer = device.CreateBuffer(&bufferDesc);
+
+        const auto md = MeshData{
+            .model = glm::mat4{1.f},
+        };
+        queue.WriteBuffer(tileMeshDataBuffer, 0, &md, sizeof(MeshData));
+    }
+
+    wgpu::BindGroupLayout materialGroupLayout;
+    { // material data
+        const std::array<wgpu::BindGroupLayoutEntry, 2> bindGroupLayoutEntries{{
+            {
+                .binding = 0,
+                .visibility = wgpu::ShaderStage::Fragment,
+                .texture =
+                    {
+                        .sampleType = wgpu::TextureSampleType::Float,
+                        .viewDimension = wgpu::TextureViewDimension::e2D,
+                    },
+            },
+            {
+                .binding = 1,
+                .visibility = wgpu::ShaderStage::Fragment,
+                .sampler =
+                    {
+                        .type = wgpu::SamplerBindingType::Filtering,
+                    },
+            },
+        }};
+
+        const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+            .entryCount = bindGroupLayoutEntries.size(),
+            .entries = bindGroupLayoutEntries.data(),
+        };
+        materialGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
+
+        const auto textureViewDesc = wgpu::TextureViewDescriptor{
+            .format = wgpu::TextureFormat::RGBA8UnormSrgb,
+            .dimension = wgpu::TextureViewDimension::e2D,
+            .baseMipLevel = 0,
+            .mipLevelCount = 1,
+            .baseArrayLayer = 0,
+            .arrayLayerCount = 1,
+            .aspect = wgpu::TextureAspect::All,
+        };
+        const auto textureView = tileTexture.CreateView(&textureViewDesc);
+
+        const std::array<wgpu::BindGroupEntry, 2> bindings{{
+            {
+                .binding = 0,
+                .textureView = textureView,
+            },
+            {
+                .binding = 1,
+                .sampler = nearestSampler,
+            },
+        }};
+        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .layout = materialGroupLayout.Get(),
+            .entryCount = bindings.size(),
+            .entries = bindings.data(),
+        };
+
+        tileMaterialBindGroup = device.CreateBindGroup(&bindGroupDesc);
+    }
+
+    wgpu::BindGroupLayout meshGroupLayout;
+    { // mesh bind group
+        const std::array<wgpu::BindGroupLayoutEntry, 1> bindGroupLayoutEntries{{
+            {
+                .binding = 0,
+                .visibility = wgpu::ShaderStage::Vertex,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::Uniform,
+                    },
+            },
+        }};
+
+        const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+            .entryCount = bindGroupLayoutEntries.size(),
+            .entries = bindGroupLayoutEntries.data(),
+        };
+        meshGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
+
+        const std::array<wgpu::BindGroupEntry, 1> bindings{{
+            {
+                .binding = 0,
+                .buffer = tileMeshDataBuffer,
+            },
+        }};
+        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .layout = meshGroupLayout.Get(),
+            .entryCount = bindings.size(),
+            .entries = bindings.data(),
+        };
+
+        tileMeshBindGroup = device.CreateBindGroup(&bindGroupDesc);
+    }
+}
+
+void Game::initImGui()
+{
+    ImGui::CreateContext();
+    ImGui_ImplSDL2_InitForOther(window);
+    ImGui_ImplWGPU_Init(
+        device.Get(),
+        3,
+        (WGPUTextureFormat)swapChainFormat,
+        (WGPUTextureFormat)wgpu::TextureFormat::Undefined);
+}
+
 void Game::loop()
 {
     // Fix your timestep! game loop
@@ -914,13 +1071,20 @@ void Game::loop()
                     if (event.type == SDL_QUIT) {
                         quit();
                     }
+                    ImGui_ImplSDL2_ProcessEvent(&event);
                 }
             }
+
+            ImGui_ImplWGPU_NewFrame();
+            ImGui_ImplSDL2_NewFrame();
+            ImGui::NewFrame();
 
             // update
             update(dt);
 
             accumulator -= dt;
+
+            ImGui::Render();
         }
 
         // Needed to report uncaptured errors.
@@ -938,32 +1102,6 @@ void Game::loop()
 
 void Game::update(float dt)
 {
-    { // camera control
-#if 0
-        const Uint8* state = SDL_GetKeyboardState(nullptr);
-        glm::vec3 walkDir{};
-
-        if (state[SDL_SCANCODE_W]) {
-            walkDir.z -= 1.f;
-        }
-        if (state[SDL_SCANCODE_S]) {
-            walkDir.z += 1.f;
-        }
-        if (state[SDL_SCANCODE_A]) {
-            walkDir.x -= 1.f;
-        }
-        if (state[SDL_SCANCODE_D]) {
-            walkDir.x += 1.f;
-        }
-
-        const auto walkVel = walkDir * 5.f;
-        cameraPos += walkVel * dt;
-
-        std::cout << cameraPos.x << " " << cameraPos.y << " " << cameraPos.z << std::endl;
-        initCamera();
-#endif
-    }
-
     { // per frame data
         PerFrameData ud{
             .viewProj = cameraProj * cameraView,
@@ -973,15 +1111,29 @@ void Game::update(float dt)
     }
 
     { // update mesh
-        meshRotationAngle += 0.5f * dt;
+        modelRotationAngle += 0.5f * dt;
         glm::mat4 meshTransform{1.f};
-        meshTransform = glm::rotate(meshTransform, meshRotationAngle, glm::vec3{0.f, 1.f, 0.f});
+        meshTransform = glm::rotate(meshTransform, modelRotationAngle, glm::vec3{0.f, 1.f, 0.f});
 
         MeshData md{
             .model = meshTransform,
         };
-        queue.WriteBuffer(meshDataBuffer, 0, &md, sizeof(MeshData));
+        queue.WriteBuffer(modelDataBuffer, 0, &md, sizeof(MeshData));
     }
+
+    updateDevTools(dt);
+}
+
+void Game::updateDevTools(float dt)
+{
+    ImGui::Begin("WebGPU Dear ImGui");
+    ImGui::Text("Dear ImGui is the best");
+    ImGui::Button("Yes");
+    ImGui::SameLine();
+    ImGui::Button("Yes");
+    ImGui::End();
+
+    // ImGui::ShowDemoWindow();
 }
 
 void Game::render()
@@ -1014,6 +1166,7 @@ void Game::render()
         const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
         renderPass.PushDebugGroup("Draw BG");
 
+#if 0
         { // draw sprites
             renderPass.SetPipeline(spritePipeline);
             renderPass.SetBindGroup(0, spriteBindGroup, 0, nullptr);
@@ -1025,6 +1178,7 @@ void Game::render()
                 indexCount * sizeof(std::uint16_t));
             renderPass.DrawIndexed(indexCount, 1, 0, 0, 0);
         }
+#endif
 
         renderPass.PopDebugGroup();
         renderPass.End();
@@ -1035,7 +1189,6 @@ void Game::render()
             .view = nextFrameTexture,
             .loadOp = wgpu::LoadOp::Load,
             .storeOp = wgpu::StoreOp::Store,
-            .clearValue = clearColor,
         };
 
         const auto depthStencilAttachment = wgpu::RenderPassDepthStencilAttachment{
@@ -1057,21 +1210,59 @@ void Game::render()
         renderPass.PushDebugGroup("Draw meshes");
 
         { // draw mesh
-            auto& mesh = model.meshes[0];
 
             renderPass.SetPipeline(pipeline);
             renderPass.SetBindGroup(0, perFrameBindGroup, 0, nullptr);
             renderPass.SetBindGroup(1, materialBindGroup, 0, nullptr);
             renderPass.SetBindGroup(2, meshBindGroup, 0, nullptr);
-            renderPass
-                .SetVertexBuffer(0, vertexBuffer, 0, mesh.vertices.size() * sizeof(Mesh::Vertex));
-            renderPass.SetIndexBuffer(
-                indexBuffer,
-                wgpu::IndexFormat::Uint16,
-                0,
-                mesh.indices.size() * sizeof(std::uint16_t));
-            renderPass.DrawIndexed(mesh.indices.size(), 1, 0, 0, 0);
+
+            { // model
+                auto& mesh = model.meshes[0];
+                renderPass.SetVertexBuffer(
+                    0, modelVertexBuffer, 0, mesh.vertices.size() * sizeof(Mesh::Vertex));
+                renderPass.SetIndexBuffer(
+                    modelIndexBuffer,
+                    wgpu::IndexFormat::Uint16,
+                    0,
+                    mesh.indices.size() * sizeof(std::uint16_t));
+                renderPass.DrawIndexed(mesh.indices.size(), 1, 0, 0, 0);
+            }
+
+            renderPass.SetBindGroup(1, tileMaterialBindGroup, 0, nullptr);
+            renderPass.SetBindGroup(2, tileMeshBindGroup, 0, nullptr);
+            { // floor tile
+                auto& mesh = tileModel.meshes[0];
+                renderPass.SetVertexBuffer(
+                    0, tileVertexBuffer, 0, mesh.vertices.size() * sizeof(Mesh::Vertex));
+                renderPass.SetIndexBuffer(
+                    tileIndexBuffer,
+                    wgpu::IndexFormat::Uint16,
+                    0,
+                    mesh.indices.size() * sizeof(std::uint16_t));
+                renderPass.DrawIndexed(mesh.indices.size(), 1, 0, 0, 0);
+            }
         }
+
+        renderPass.PopDebugGroup();
+        renderPass.End();
+    }
+
+    {
+        const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
+            .view = nextFrameTexture,
+            .loadOp = wgpu::LoadOp::Load,
+            .storeOp = wgpu::StoreOp::Store,
+        };
+
+        const auto renderPassDesc = wgpu::RenderPassDescriptor{
+            .colorAttachmentCount = 1,
+            .colorAttachments = &mainScreenAttachment,
+        };
+
+        const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
+        renderPass.PushDebugGroup("Draw Dear ImGui");
+
+        ImGui_ImplWGPU_RenderDrawData(ImGui::GetDrawData(), renderPass.Get());
 
         renderPass.PopDebugGroup();
         renderPass.End();
@@ -1093,6 +1284,8 @@ void Game::quit()
 
 void Game::cleanup()
 {
+    shutdownImGui();
+
     swapChain.reset();
     surface.reset();
 
@@ -1102,4 +1295,11 @@ void Game::cleanup()
     wgpuDeviceDestroy(d);
 
     SDL_Quit();
+}
+
+void Game::shutdownImGui()
+{
+    ImGui_ImplSDL2_Shutdown();
+    ImGui_ImplWGPU_Shutdown();
+    ImGui::DestroyContext();
 }
