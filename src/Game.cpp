@@ -93,7 +93,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.position = fd.viewProj * worldPos;
     out.pos = worldPos.xyz;
     out.uv = in.uv;
-    out.normal = (mesh.model * vec4(in.normal, 1.0)).xyz;
+    out.normal = (vec4(in.normal, 1.0)).xyz;
 
     return out;
 }
@@ -122,7 +122,7 @@ fn blinnPhongBRDF(diffuse: vec3f, n: vec3f, v: vec3f, l: vec3f, h: vec3f) -> vec
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let diffuse = textureSample(texture, texSampler, in.uv).rgb;
 
-    let ambient = vec3(0.1, 0.1, 0.1);
+    let ambient = vec3(0.05, 0.05, 0.05);
 
     let lightDir = -dirLight.directionAndMisc.xyz;
     let lightColor = dirLight.colorAndIntensity.rgb;
@@ -234,10 +234,12 @@ void Game::init()
     const auto adapterOpts = wgpu::RequestAdapterOptions{};
     adapter = util::requestAdapter(instance, &adapterOpts);
 
+    auto supportedLimits = wgpu::SupportedLimits{};
     { // report supported limits
-        auto supportedLimits = wgpu::SupportedLimits{};
         adapter.GetLimits(&supportedLimits);
         std::cout << "max uniform buffer size: "
+                  << supportedLimits.limits.maxUniformBufferBindingSize << std::endl;
+        std::cout << "max uniform buffer binding size: "
                   << supportedLimits.limits.maxUniformBufferBindingSize << std::endl;
         std::cout << "max bind groups: " << supportedLimits.limits.maxBindGroups << std::endl;
     }
@@ -271,7 +273,9 @@ void Game::init()
     deviceTogglesDesc.enabledToggles = enabledToggles;
     deviceTogglesDesc.enabledToggleCount = 2;
 
-    // TODO: set limits
+    // TODO: set limits?
+    // it seems like not setting anything initializes everything to the minimums
+    // required by the standard, which might be good, actually.
     const auto requiredLimits = wgpu::RequiredLimits{};
     const auto deviceDesc = wgpu::DeviceDescriptor{
         .nextInChain = &deviceTogglesDesc,
