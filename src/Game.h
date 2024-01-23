@@ -20,6 +20,11 @@ public:
         std::string windowTitle = "Game";
     };
 
+    struct GPUMesh {
+        wgpu::Buffer vertexBuffer;
+        wgpu::Buffer indexBuffer;
+    };
+
     struct Material {
         wgpu::Texture texture;
         wgpu::BindGroup bindGroup;
@@ -40,6 +45,7 @@ private:
     void initImGui();
 
     Material makeMaterial(const std::filesystem::path& diffusePath, const wgpu::Sampler& sampler);
+    GPUMesh makeGPUMesh(const Mesh& cpuMesh);
 
     void loop();
     void update(float dt);
@@ -64,6 +70,8 @@ private:
 
     wgpu::TextureFormat swapChainFormat;
     wgpu::Queue queue;
+
+    wgpu::Sampler nearestSampler;
 
     wgpu::BindGroup perFrameBindGroup;
 
@@ -94,38 +102,30 @@ private:
     wgpu::Texture depthTexture;
     wgpu::TextureView depthTextureView;
 
-    wgpu::Buffer modelVertexBuffer;
-    wgpu::Buffer modelIndexBuffer;
     wgpu::Buffer modelDataBuffer;
     wgpu::BindGroup meshBindGroup;
     Model model;
     float modelRotationAngle{0.f};
     Material meshMaterial;
-
-    wgpu::BindGroup spriteBindGroup;
+    GPUMesh yaeMesh;
 
     wgpu::ShaderModule spriteShaderModule;
     wgpu::BindGroupLayout spriteBindGroupLayout;
     wgpu::RenderPipeline spritePipeline;
 
+    wgpu::BindGroup spriteBindGroup;
     wgpu::Buffer spriteVertexBuffer;
     wgpu::Buffer spriteIndexBuffer;
     wgpu::Texture spriteTexture;
-
-    wgpu::Sampler nearestSampler;
 
     glm::vec3 cameraPos;
     glm::vec3 cameraDirection;
     glm::mat4 cameraView;
     glm::mat4 cameraProj;
 
-    wgpu::Buffer tileVertexBuffer;
-    wgpu::Buffer tileIndexBuffer;
     wgpu::BindGroup tileMeshBindGroup;
     wgpu::Buffer tileMeshDataBuffer;
     Model tileModel;
     Material tileMaterial;
-
-    wgpu::Texture tileTexture;
-    wgpu::BindGroup tileMaterialBindGroup;
+    GPUMesh tileMesh;
 };

@@ -200,8 +200,6 @@ std::vector<std::uint16_t> indexData = {
     0, // Triangle #1
 };
 
-int indexCount = static_cast<int>(indexData.size());
-
 } // end of anonymous namespace
 
 void Game::Params::validate()
@@ -436,25 +434,7 @@ void Game::createYaeModel()
     assert(model.meshes.size() == 1);
     auto& mesh = model.meshes[0];
 
-    { // vertex buffer
-        const auto bufferDesc = wgpu::BufferDescriptor{
-            .usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst,
-            .size = mesh.vertices.size() * sizeof(Mesh::Vertex),
-        };
-
-        modelVertexBuffer = device.CreateBuffer(&bufferDesc);
-        queue.WriteBuffer(modelVertexBuffer, 0, mesh.vertices.data(), bufferDesc.size);
-    }
-
-    { // index buffer
-        const auto bufferDesc = wgpu::BufferDescriptor{
-            .usage = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst,
-            .size = mesh.indices.size() * sizeof(std::uint16_t),
-        };
-
-        modelIndexBuffer = device.CreateBuffer(&bufferDesc);
-        queue.WriteBuffer(modelIndexBuffer, 0, mesh.indices.data(), bufferDesc.size);
-    }
+    yaeMesh = makeGPUMesh(mesh);
 
     { // mesh data buffer
         const auto bufferDesc = wgpu::BufferDescriptor{
@@ -919,6 +899,33 @@ Game::Material Game::makeMaterial(
     return material;
 }
 
+Game::GPUMesh Game::makeGPUMesh(const Mesh& cpuMesh)
+{
+    GPUMesh mesh;
+
+    { // vertex buffer
+        const auto bufferDesc = wgpu::BufferDescriptor{
+            .usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst,
+            .size = cpuMesh.vertices.size() * sizeof(Mesh::Vertex),
+        };
+
+        mesh.vertexBuffer = device.CreateBuffer(&bufferDesc);
+        queue.WriteBuffer(mesh.vertexBuffer, 0, cpuMesh.vertices.data(), bufferDesc.size);
+    }
+
+    { // index buffer
+        const auto bufferDesc = wgpu::BufferDescriptor{
+            .usage = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst,
+            .size = cpuMesh.indices.size() * sizeof(std::uint16_t),
+        };
+
+        mesh.indexBuffer = device.CreateBuffer(&bufferDesc);
+        queue.WriteBuffer(mesh.indexBuffer, 0, cpuMesh.indices.data(), bufferDesc.size);
+    }
+
+    return mesh;
+}
+
 void Game::createFloorTile()
 {
     tileModel = util::loadModel("assets/models/tile.gltf");
@@ -926,25 +933,7 @@ void Game::createFloorTile()
     assert(model.meshes.size() == 1);
     auto& mesh = tileModel.meshes[0];
 
-    { // vertex buffer
-        const auto bufferDesc = wgpu::BufferDescriptor{
-            .usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst,
-            .size = mesh.vertices.size() * sizeof(Mesh::Vertex),
-        };
-
-        tileVertexBuffer = device.CreateBuffer(&bufferDesc);
-        queue.WriteBuffer(tileVertexBuffer, 0, mesh.vertices.data(), bufferDesc.size);
-    }
-
-    { // index buffer
-        const auto bufferDesc = wgpu::BufferDescriptor{
-            .usage = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst,
-            .size = mesh.indices.size() * sizeof(std::uint16_t),
-        };
-
-        tileIndexBuffer = device.CreateBuffer(&bufferDesc);
-        queue.WriteBuffer(tileIndexBuffer, 0, mesh.indices.data(), bufferDesc.size);
-    }
+    tileMesh = makeGPUMesh(mesh);
 
     { // mesh data buffer
         const auto bufferDesc = wgpu::BufferDescriptor{
@@ -1112,17 +1101,14 @@ void Game::render()
         const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
         renderPass.PushDebugGroup("Draw BG");
 
-#if 0
+#if 1
         { // draw sprites
             renderPass.SetPipeline(spritePipeline);
             renderPass.SetBindGroup(0, spriteBindGroup, 0, nullptr);
-            renderPass.SetVertexBuffer(0, spriteVertexBuffer, 0, pointData.size() * sizeof(float));
-            renderPass.SetIndexBuffer(
-                spriteIndexBuffer,
-                wgpu::IndexFormat::Uint16,
-                0,
-                indexCount * sizeof(std::uint16_t));
-            renderPass.DrawIndexed(indexCount, 1, 0, 0, 0);
+            renderPass.SetVertexBuffer(0, spriteVertexBuffer, 0, wgpu::kWholeSize);
+            renderPass
+                .SetIndexBuffer(spriteIndexBuffer, wgpu::IndexFormat::Uint16, 0, wgpu::kWholeSize);
+            renderPass.DrawIndexed(spriteIndexBuffer.GetSize() / sizeof(std::uint16_t), 1, 0, 0, 0);
         }
 #endif
 
@@ -1155,37 +1141,28 @@ void Game::render()
         const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
         renderPass.PushDebugGroup("Draw meshes");
 
+        auto drawMesh = [](const wgpu::RenderPassEncoder& renderPass, const GPUMesh& mesh) {
+            renderPass.SetVertexBuffer(0, mesh.vertexBuffer, 0, wgpu::kWholeSize);
+            renderPass
+                .SetIndexBuffer(mesh.indexBuffer, wgpu::IndexFormat::Uint16, 0, wgpu::kWholeSize);
+            renderPass.DrawIndexed(mesh.indexBuffer.GetSize() / sizeof(std::uint16_t), 1, 0, 0, 0);
+        };
+
         { // draw mesh
 
             renderPass.SetPipeline(meshPipeline);
             renderPass.SetBindGroup(0, perFrameBindGroup, 0, nullptr);
-            renderPass.SetBindGroup(1, meshMaterial.bindGroup, 0, nullptr);
-            renderPass.SetBindGroup(2, meshBindGroup, 0, nullptr);
 
-            { // model
-                auto& mesh = model.meshes[0];
-                renderPass.SetVertexBuffer(
-                    0, modelVertexBuffer, 0, mesh.vertices.size() * sizeof(Mesh::Vertex));
-                renderPass.SetIndexBuffer(
-                    modelIndexBuffer,
-                    wgpu::IndexFormat::Uint16,
-                    0,
-                    mesh.indices.size() * sizeof(std::uint16_t));
-                renderPass.DrawIndexed(mesh.indices.size(), 1, 0, 0, 0);
+            { // yae
+                renderPass.SetBindGroup(1, meshMaterial.bindGroup, 0, nullptr);
+                renderPass.SetBindGroup(2, meshBindGroup, 0, nullptr);
+                drawMesh(renderPass, yaeMesh);
             }
 
-            renderPass.SetBindGroup(1, tileMaterial.bindGroup, 0, nullptr);
-            renderPass.SetBindGroup(2, tileMeshBindGroup, 0, nullptr);
             { // floor tile
-                auto& mesh = tileModel.meshes[0];
-                renderPass.SetVertexBuffer(
-                    0, tileVertexBuffer, 0, mesh.vertices.size() * sizeof(Mesh::Vertex));
-                renderPass.SetIndexBuffer(
-                    tileIndexBuffer,
-                    wgpu::IndexFormat::Uint16,
-                    0,
-                    mesh.indices.size() * sizeof(std::uint16_t));
-                renderPass.DrawIndexed(mesh.indices.size(), 1, 0, 0, 0);
+                renderPass.SetBindGroup(1, tileMaterial.bindGroup, 0, nullptr);
+                renderPass.SetBindGroup(2, tileMeshBindGroup, 0, nullptr);
+                drawMesh(renderPass, tileMesh);
             }
         }
 
