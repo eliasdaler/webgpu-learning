@@ -318,6 +318,36 @@ void Game::init()
             std::make_unique<wgpu::SwapChain>(device.CreateSwapChain(*surface, &swapChainDesc));
     }
 
+    { // create depth dexture
+        const auto textureDesc = wgpu::TextureDescriptor{
+            .usage = wgpu::TextureUsage::RenderAttachment,
+            .dimension = wgpu::TextureDimension::e2D,
+            .size =
+                {
+                    .width = static_cast<std::uint32_t>(params.screenWidth),
+                    .height = static_cast<std::uint32_t>(params.screenHeight),
+                    .depthOrArrayLayers = 1,
+                },
+            .format = depthTextureFormat,
+            .mipLevelCount = 1,
+            .sampleCount = 1,
+        };
+        depthTexture = device.CreateTexture(&textureDesc);
+    }
+
+    { // create depth texture view
+        const auto textureViewDesc = wgpu::TextureViewDescriptor{
+            .format = depthTextureFormat,
+            .dimension = wgpu::TextureViewDimension::e2D,
+            .baseMipLevel = 0,
+            .mipLevelCount = 1,
+            .baseArrayLayer = 0,
+            .arrayLayerCount = 1,
+            .aspect = wgpu::TextureAspect::DepthOnly,
+        };
+        depthTextureView = depthTexture.CreateView(&textureViewDesc);
+    }
+
     const auto samplerDesc = wgpu::SamplerDescriptor{
         .addressModeU = wgpu::AddressMode::Repeat,
         .addressModeV = wgpu::AddressMode::Repeat,
@@ -363,6 +393,49 @@ void Game::init()
         queue.WriteBuffer(directionalLightBuffer, 0, &dirLightData, sizeof(DirectionalLightData));
     }
 
+    createMeshDrawingPipeline();
+    createSpriteDrawingPipeline();
+
+    createSprite();
+
+    createYaeModel();
+    createFloorTile();
+
+    initImGui();
+}
+
+void Game::createYaeModel()
+{
+    // load model
+    model = util::loadModel("assets/models/yae.gltf");
+    // let's assume one mesh for now
+    assert(model.meshes.size() == 1);
+    auto& mesh = model.meshes[0];
+
+    // load diffuse texture
+    modelTexture = util::
+        loadTexture(device, queue, mesh.diffuseTexturePath, wgpu::TextureFormat::RGBA8UnormSrgb);
+
+    { // vertex buffer
+        const auto bufferDesc = wgpu::BufferDescriptor{
+            .usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst,
+            .size = mesh.vertices.size() * sizeof(Mesh::Vertex),
+        };
+
+        modelVertexBuffer = device.CreateBuffer(&bufferDesc);
+        queue.WriteBuffer(modelVertexBuffer, 0, mesh.vertices.data(), bufferDesc.size);
+    }
+
+    { // index buffer
+        const auto bufferDesc = wgpu::BufferDescriptor{
+            .usage = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst,
+            .size = mesh.indices.size() * sizeof(std::uint16_t),
+        };
+
+        modelIndexBuffer = device.CreateBuffer(&bufferDesc);
+        queue.WriteBuffer(modelIndexBuffer, 0, mesh.indices.data(), bufferDesc.size);
+    }
+
     { // mesh data buffer
         const auto bufferDesc = wgpu::BufferDescriptor{
             .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
@@ -377,96 +450,7 @@ void Game::init()
         queue.WriteBuffer(modelDataBuffer, 0, &md, sizeof(MeshData));
     }
 
-    initModelStuff();
-    initSpriteStuff();
-    createFloorTile();
-
-    initImGui();
-}
-
-void Game::initModelStuff()
-{
-    { // create shader module
-        auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
-        shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
-        shaderCodeDesc.code = shaderSource;
-
-        const auto shaderDesc = wgpu::ShaderModuleDescriptor{
-            .nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&shaderCodeDesc),
-            .label = "model",
-        };
-
-        shaderModule = device.CreateShaderModule(&shaderDesc);
-        shaderModule.GetCompilationInfo(defaultCompilationCallback, (void*)"model");
-    }
-
-    // load model
-    model = util::loadModel("assets/models/yae.gltf");
-    // let's assume one mesh for now
-    assert(model.meshes.size() == 1);
-    auto& mesh = model.meshes[0];
-
-    // load diffuse texture
-    modelTexture = util::
-        loadTexture(device, queue, mesh.diffuseTexturePath, wgpu::TextureFormat::RGBA8UnormSrgb);
-
-    { // create depth dexture
-        const auto textureDesc = wgpu::TextureDescriptor{
-            .usage = wgpu::TextureUsage::RenderAttachment,
-            .dimension = wgpu::TextureDimension::e2D,
-            .size =
-                {
-                    .width = static_cast<std::uint32_t>(params.screenWidth),
-                    .height = static_cast<std::uint32_t>(params.screenHeight),
-                    .depthOrArrayLayers = 1,
-                },
-            .format = depthTextureFormat,
-            .mipLevelCount = 1,
-            .sampleCount = 1,
-        };
-        depthTexture = device.CreateTexture(&textureDesc);
-    }
-
-    { // create depth texture view
-        const auto textureViewDesc = wgpu::TextureViewDescriptor{
-            .format = depthTextureFormat,
-            .dimension = wgpu::TextureViewDimension::e2D,
-            .baseMipLevel = 0,
-            .mipLevelCount = 1,
-            .baseArrayLayer = 0,
-            .arrayLayerCount = 1,
-            .aspect = wgpu::TextureAspect::DepthOnly,
-        };
-        depthTextureView = depthTexture.CreateView(&textureViewDesc);
-    }
-
-    wgpu::BindGroupLayout perFrameDataGroupLayout;
     { // per frame data
-        const std::array<wgpu::BindGroupLayoutEntry, 2> bindGroupLayoutEntries{{
-            {
-                .binding = 0,
-                .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
-                .buffer =
-                    {
-                        .type = wgpu::BufferBindingType::Uniform,
-                    },
-            },
-            {
-                .binding = 1,
-                .visibility = wgpu::ShaderStage::Fragment,
-                .buffer =
-                    {
-                        .type = wgpu::BufferBindingType::Uniform,
-                    },
-            },
-        }};
-
-        const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
-            .entryCount = bindGroupLayoutEntries.size(),
-            .entries = bindGroupLayoutEntries.data(),
-        };
-        perFrameDataGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
-
         const std::array<wgpu::BindGroupEntry, 2> bindings{{
             {
                 .binding = 0,
@@ -486,34 +470,7 @@ void Game::initModelStuff()
         perFrameBindGroup = device.CreateBindGroup(&bindGroupDesc);
     }
 
-    wgpu::BindGroupLayout materialGroupLayout;
     { // material data
-        const std::array<wgpu::BindGroupLayoutEntry, 2> bindGroupLayoutEntries{{
-            {
-                .binding = 0,
-                .visibility = wgpu::ShaderStage::Fragment,
-                .texture =
-                    {
-                        .sampleType = wgpu::TextureSampleType::Float,
-                        .viewDimension = wgpu::TextureViewDimension::e2D,
-                    },
-            },
-            {
-                .binding = 1,
-                .visibility = wgpu::ShaderStage::Fragment,
-                .sampler =
-                    {
-                        .type = wgpu::SamplerBindingType::Filtering,
-                    },
-            },
-        }};
-
-        const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
-            .entryCount = bindGroupLayoutEntries.size(),
-            .entries = bindGroupLayoutEntries.data(),
-        };
-        materialGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
-
         const auto textureViewDesc = wgpu::TextureViewDescriptor{
             .format = wgpu::TextureFormat::RGBA8UnormSrgb,
             .dimension = wgpu::TextureViewDimension::e2D,
@@ -544,8 +501,95 @@ void Game::initModelStuff()
         materialBindGroup = device.CreateBindGroup(&bindGroupDesc);
     }
 
-    wgpu::BindGroupLayout meshGroupLayout;
     { // mesh bind group
+        const std::array<wgpu::BindGroupEntry, 1> bindings{{
+            {
+                .binding = 0,
+                .buffer = modelDataBuffer,
+            },
+        }};
+        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .layout = meshGroupLayout.Get(),
+            .entryCount = bindings.size(),
+            .entries = bindings.data(),
+        };
+
+        meshBindGroup = device.CreateBindGroup(&bindGroupDesc);
+    }
+}
+
+void Game::createMeshDrawingPipeline()
+{
+    { // create shader module
+        auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
+        shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
+        shaderCodeDesc.code = shaderSource;
+
+        const auto shaderDesc = wgpu::ShaderModuleDescriptor{
+            .nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&shaderCodeDesc),
+            .label = "model",
+        };
+
+        meshShaderModule = device.CreateShaderModule(&shaderDesc);
+        meshShaderModule.GetCompilationInfo(defaultCompilationCallback, (void*)"model");
+    }
+
+    { // per frame data layout
+        const std::array<wgpu::BindGroupLayoutEntry, 2> bindGroupLayoutEntries{{
+            {
+                .binding = 0,
+                .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::Uniform,
+                    },
+            },
+            {
+                .binding = 1,
+                .visibility = wgpu::ShaderStage::Fragment,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::Uniform,
+                    },
+            },
+        }};
+
+        const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+            .entryCount = bindGroupLayoutEntries.size(),
+            .entries = bindGroupLayoutEntries.data(),
+        };
+        perFrameDataGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
+    }
+
+    { // material data layout
+        const std::array<wgpu::BindGroupLayoutEntry, 2> bindGroupLayoutEntries{{
+            {
+                .binding = 0,
+                .visibility = wgpu::ShaderStage::Fragment,
+                .texture =
+                    {
+                        .sampleType = wgpu::TextureSampleType::Float,
+                        .viewDimension = wgpu::TextureViewDimension::e2D,
+                    },
+            },
+            {
+                .binding = 1,
+                .visibility = wgpu::ShaderStage::Fragment,
+                .sampler =
+                    {
+                        .type = wgpu::SamplerBindingType::Filtering,
+                    },
+            },
+        }};
+
+        const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+            .entryCount = bindGroupLayoutEntries.size(),
+            .entries = bindGroupLayoutEntries.data(),
+        };
+        materialGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
+    }
+
+    { // mesh data layout
         const std::array<wgpu::BindGroupLayoutEntry, 1> bindGroupLayoutEntries{{
             {
                 .binding = 0,
@@ -562,40 +606,6 @@ void Game::initModelStuff()
             .entries = bindGroupLayoutEntries.data(),
         };
         meshGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
-
-        const std::array<wgpu::BindGroupEntry, 1> bindings{{
-            {
-                .binding = 0,
-                .buffer = modelDataBuffer,
-            },
-        }};
-        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
-            .layout = meshGroupLayout.Get(),
-            .entryCount = bindings.size(),
-            .entries = bindings.data(),
-        };
-
-        meshBindGroup = device.CreateBindGroup(&bindGroupDesc);
-    }
-
-    { // vertex buffer
-        const auto bufferDesc = wgpu::BufferDescriptor{
-            .usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst,
-            .size = mesh.vertices.size() * sizeof(Mesh::Vertex),
-        };
-
-        modelVertexBuffer = device.CreateBuffer(&bufferDesc);
-        queue.WriteBuffer(modelVertexBuffer, 0, mesh.vertices.data(), bufferDesc.size);
-    }
-
-    { // index buffer
-        const auto bufferDesc = wgpu::BufferDescriptor{
-            .usage = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst,
-            .size = mesh.indices.size() * sizeof(std::uint16_t),
-        };
-
-        modelIndexBuffer = device.CreateBuffer(&bufferDesc);
-        queue.WriteBuffer(modelIndexBuffer, 0, mesh.indices.data(), bufferDesc.size);
     }
 
     {
@@ -663,7 +673,7 @@ void Game::initModelStuff()
         };
 
         pipelineDesc.vertex = wgpu::VertexState{
-            .module = shaderModule,
+            .module = meshShaderModule,
             .entryPoint = "vs_main",
             .bufferCount = 1,
             .buffers = &vertexBufferLayout,
@@ -690,18 +700,18 @@ void Game::initModelStuff()
         };
 
         const auto fragmentState = wgpu::FragmentState{
-            .module = shaderModule,
+            .module = meshShaderModule,
             .entryPoint = "fs_main",
             .targetCount = 1,
             .targets = &colorTarget,
         };
         pipelineDesc.fragment = &fragmentState;
 
-        pipeline = device.CreateRenderPipeline(&pipelineDesc);
+        meshPipeline = device.CreateRenderPipeline(&pipelineDesc);
     }
 }
 
-void Game::initSpriteStuff()
+void Game::createSpriteDrawingPipeline()
 {
     { // create sprite shader module
         auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
@@ -714,73 +724,39 @@ void Game::initSpriteStuff()
         };
 
         spriteShaderModule = device.CreateShaderModule(&shaderDesc);
-        shaderModule.GetCompilationInfo(defaultCompilationCallback, (void*)"sprite");
+        spriteShaderModule.GetCompilationInfo(defaultCompilationCallback, (void*)"sprite");
     }
 
-    spriteTexture = util::loadTexture(
-        device, queue, "assets/textures/shinji.png", wgpu::TextureFormat::RGBA8UnormSrgb);
+    const std::array<wgpu::BindGroupLayoutEntry, 2> bindingLayoutEntries{{
+        {
+            .binding = 0,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .texture =
+                {
+                    .sampleType = wgpu::TextureSampleType::Float,
+                    .viewDimension = wgpu::TextureViewDimension::e2D,
+                },
+        },
+        {
+            .binding = 1,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .sampler =
+                {
+                    .type = wgpu::SamplerBindingType::Filtering,
+                },
+        },
+    }};
 
-    wgpu::BindGroupLayout bindGroupLayout;
-    {
-        const std::array<wgpu::BindGroupLayoutEntry, 2> bindingLayoutEntries{{
-            {
-                .binding = 0,
-                .visibility = wgpu::ShaderStage::Fragment,
-                .texture =
-                    {
-                        .sampleType = wgpu::TextureSampleType::Float,
-                        .viewDimension = wgpu::TextureViewDimension::e2D,
-                    },
-            },
-            {
-                .binding = 1,
-                .visibility = wgpu::ShaderStage::Fragment,
-                .sampler =
-                    {
-                        .type = wgpu::SamplerBindingType::Filtering,
-                    },
-            },
-        }};
-
-        const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
-            .entryCount = bindingLayoutEntries.size(),
-            .entries = bindingLayoutEntries.data(),
-        };
-        bindGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
-
-        const auto textureViewDesc = wgpu::TextureViewDescriptor{
-            .format = wgpu::TextureFormat::RGBA8UnormSrgb,
-            .dimension = wgpu::TextureViewDimension::e2D,
-            .baseMipLevel = 0,
-            .mipLevelCount = 1,
-            .baseArrayLayer = 0,
-            .arrayLayerCount = 1,
-            .aspect = wgpu::TextureAspect::All,
-        };
-        const auto textureView = spriteTexture.CreateView(&textureViewDesc);
-
-        const std::array<wgpu::BindGroupEntry, 2> bindings{
-            {{
-                 .binding = 0,
-                 .textureView = textureView,
-             },
-             {
-                 .binding = 1,
-                 .sampler = nearestSampler,
-             }}};
-        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
-            .layout = bindGroupLayout.Get(),
-            .entryCount = bindings.size(),
-            .entries = bindings.data(),
-        };
-
-        spriteBindGroup = device.CreateBindGroup(&bindGroupDesc);
-    }
+    const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+        .entryCount = bindingLayoutEntries.size(),
+        .entries = bindingLayoutEntries.data(),
+    };
+    spriteBindGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
 
     {
         const auto layoutDesc = wgpu::PipelineLayoutDescriptor{
             .bindGroupLayoutCount = 1,
-            .bindGroupLayouts = &bindGroupLayout,
+            .bindGroupLayouts = &spriteBindGroupLayout,
         };
         auto pipelineDesc = wgpu::RenderPipelineDescriptor{
             .layout = device.CreatePipelineLayout(&layoutDesc),
@@ -852,6 +828,42 @@ void Game::initSpriteStuff()
         pipelineDesc.fragment = &fragmentState;
 
         spritePipeline = device.CreateRenderPipeline(&pipelineDesc);
+    }
+}
+
+void Game::createSprite()
+{
+    spriteTexture = util::loadTexture(
+        device, queue, "assets/textures/shinji.png", wgpu::TextureFormat::RGBA8UnormSrgb);
+
+    {
+        const auto textureViewDesc = wgpu::TextureViewDescriptor{
+            .format = wgpu::TextureFormat::RGBA8UnormSrgb,
+            .dimension = wgpu::TextureViewDimension::e2D,
+            .baseMipLevel = 0,
+            .mipLevelCount = 1,
+            .baseArrayLayer = 0,
+            .arrayLayerCount = 1,
+            .aspect = wgpu::TextureAspect::All,
+        };
+        const auto textureView = spriteTexture.CreateView(&textureViewDesc);
+
+        const std::array<wgpu::BindGroupEntry, 2> bindings{
+            {{
+                 .binding = 0,
+                 .textureView = textureView,
+             },
+             {
+                 .binding = 1,
+                 .sampler = nearestSampler,
+             }}};
+        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .layout = spriteBindGroupLayout.Get(),
+            .entryCount = bindings.size(),
+            .entries = bindings.data(),
+        };
+
+        spriteBindGroup = device.CreateBindGroup(&bindGroupDesc);
     }
 
     { // vertex buffer
@@ -940,34 +952,7 @@ void Game::createFloorTile()
         queue.WriteBuffer(tileMeshDataBuffer, 0, &md, sizeof(MeshData));
     }
 
-    wgpu::BindGroupLayout materialGroupLayout;
     { // material data
-        const std::array<wgpu::BindGroupLayoutEntry, 2> bindGroupLayoutEntries{{
-            {
-                .binding = 0,
-                .visibility = wgpu::ShaderStage::Fragment,
-                .texture =
-                    {
-                        .sampleType = wgpu::TextureSampleType::Float,
-                        .viewDimension = wgpu::TextureViewDimension::e2D,
-                    },
-            },
-            {
-                .binding = 1,
-                .visibility = wgpu::ShaderStage::Fragment,
-                .sampler =
-                    {
-                        .type = wgpu::SamplerBindingType::Filtering,
-                    },
-            },
-        }};
-
-        const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
-            .entryCount = bindGroupLayoutEntries.size(),
-            .entries = bindGroupLayoutEntries.data(),
-        };
-        materialGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
-
         const auto textureViewDesc = wgpu::TextureViewDescriptor{
             .format = wgpu::TextureFormat::RGBA8UnormSrgb,
             .dimension = wgpu::TextureViewDimension::e2D,
@@ -998,25 +983,7 @@ void Game::createFloorTile()
         tileMaterialBindGroup = device.CreateBindGroup(&bindGroupDesc);
     }
 
-    wgpu::BindGroupLayout meshGroupLayout;
     { // mesh bind group
-        const std::array<wgpu::BindGroupLayoutEntry, 1> bindGroupLayoutEntries{{
-            {
-                .binding = 0,
-                .visibility = wgpu::ShaderStage::Vertex,
-                .buffer =
-                    {
-                        .type = wgpu::BufferBindingType::Uniform,
-                    },
-            },
-        }};
-
-        const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
-            .entryCount = bindGroupLayoutEntries.size(),
-            .entries = bindGroupLayoutEntries.data(),
-        };
-        meshGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
-
         const std::array<wgpu::BindGroupEntry, 1> bindings{{
             {
                 .binding = 0,
@@ -1211,7 +1178,7 @@ void Game::render()
 
         { // draw mesh
 
-            renderPass.SetPipeline(pipeline);
+            renderPass.SetPipeline(meshPipeline);
             renderPass.SetBindGroup(0, perFrameBindGroup, 0, nullptr);
             renderPass.SetBindGroup(1, materialBindGroup, 0, nullptr);
             renderPass.SetBindGroup(2, meshBindGroup, 0, nullptr);

@@ -25,11 +25,13 @@ public:
 
 private:
     void init();
-    void initModelStuff();
-    void createModelDrawingPipeline();
-    void initSpriteStuff();
-    void createFloorTile();
     void initCamera();
+    void initSceneData();
+    void createMeshDrawingPipeline();
+    void createSpriteDrawingPipeline();
+    void createSprite();
+    void createYaeModel();
+    void createFloorTile();
     void initImGui();
 
     void loop();
@@ -56,19 +58,20 @@ private:
     wgpu::TextureFormat swapChainFormat;
     wgpu::Queue queue;
 
-    wgpu::ShaderModule shaderModule;
-
     wgpu::BindGroup perFrameBindGroup;
     wgpu::BindGroup materialBindGroup;
     wgpu::BindGroup meshBindGroup;
 
-    wgpu::RenderPipeline pipeline;
+    wgpu::ShaderModule meshShaderModule;
+    wgpu::BindGroupLayout perFrameDataGroupLayout;
+    wgpu::BindGroupLayout materialGroupLayout;
+    wgpu::BindGroupLayout meshGroupLayout;
+    wgpu::RenderPipeline meshPipeline;
 
     struct PerFrameData {
         glm::mat4 viewProj;
         glm::vec4 cameraPos;
     };
-    wgpu::Buffer frameDataBuffer;
 
     struct MeshData {
         glm::mat4 model;
@@ -78,6 +81,8 @@ private:
         glm::vec4 directionAndMisc; // [pos.x, pos.y, pos.z, unused]
         glm::vec4 colorAndIntensity; // [color.r, color.g, color.b, intensity]
     };
+
+    wgpu::Buffer frameDataBuffer;
     wgpu::Buffer directionalLightBuffer;
 
     wgpu::TextureFormat depthTextureFormat{wgpu::TextureFormat::Depth24Plus};
@@ -91,8 +96,10 @@ private:
     Model model;
     float modelRotationAngle{0.f};
 
-    wgpu::ShaderModule spriteShaderModule;
     wgpu::BindGroup spriteBindGroup;
+
+    wgpu::ShaderModule spriteShaderModule;
+    wgpu::BindGroupLayout spriteBindGroupLayout;
     wgpu::RenderPipeline spritePipeline;
 
     wgpu::Buffer spriteVertexBuffer;
