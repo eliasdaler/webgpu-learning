@@ -323,6 +323,10 @@ void App::createPipeline()
 void App::loop()
 {
     while (!glfwWindowShouldClose(window)) {
+        // Needed to report uncaptured errors.
+        // TODO: figure out how to properly use instance.ProcessEvents()
+        device.Tick();
+
         glfwPollEvents();
         render();
     }
