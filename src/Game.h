@@ -104,7 +104,6 @@ private:
 
     wgpu::Buffer modelDataBuffer;
     wgpu::BindGroup meshBindGroup;
-    Model model;
     float modelRotationAngle{0.f};
     Material meshMaterial;
     GPUMesh yaeMesh;
@@ -125,7 +124,6 @@ private:
 
     wgpu::BindGroup tileMeshBindGroup;
     wgpu::Buffer tileMeshDataBuffer;
-    Model tileModel;
     Material tileMaterial;
     GPUMesh tileMesh;
 };

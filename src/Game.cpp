@@ -429,7 +429,7 @@ void Game::initSceneData()
 void Game::createYaeModel()
 {
     // load model
-    model = util::loadModel("assets/models/yae.gltf");
+    auto model = util::loadModel("assets/models/yae.gltf");
     // let's assume one mesh for now
     assert(model.meshes.size() == 1);
     auto& mesh = model.meshes[0];
@@ -928,9 +928,9 @@ Game::GPUMesh Game::makeGPUMesh(const Mesh& cpuMesh)
 
 void Game::createFloorTile()
 {
-    tileModel = util::loadModel("assets/models/tile.gltf");
+    auto tileModel = util::loadModel("assets/models/tile.gltf");
     // let's assume one mesh for now
-    assert(model.meshes.size() == 1);
+    assert(tileModel.meshes.size() == 1);
     auto& mesh = tileModel.meshes[0];
 
     tileMesh = makeGPUMesh(mesh);
