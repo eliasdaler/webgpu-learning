@@ -20,6 +20,11 @@ public:
         std::string windowTitle = "Game";
     };
 
+    struct Material {
+        wgpu::Texture texture;
+        wgpu::BindGroup bindGroup;
+    };
+
 public:
     void start(Params params);
 
@@ -33,6 +38,8 @@ private:
     void createYaeModel();
     void createFloorTile();
     void initImGui();
+
+    Material makeMaterial(const std::filesystem::path& diffusePath, const wgpu::Sampler& sampler);
 
     void loop();
     void update(float dt);
@@ -59,8 +66,6 @@ private:
     wgpu::Queue queue;
 
     wgpu::BindGroup perFrameBindGroup;
-    wgpu::BindGroup materialBindGroup;
-    wgpu::BindGroup meshBindGroup;
 
     wgpu::ShaderModule meshShaderModule;
     wgpu::BindGroupLayout perFrameDataGroupLayout;
@@ -91,10 +96,11 @@ private:
 
     wgpu::Buffer modelVertexBuffer;
     wgpu::Buffer modelIndexBuffer;
-    wgpu::Texture modelTexture;
     wgpu::Buffer modelDataBuffer;
+    wgpu::BindGroup meshBindGroup;
     Model model;
     float modelRotationAngle{0.f};
+    Material meshMaterial;
 
     wgpu::BindGroup spriteBindGroup;
 
@@ -115,9 +121,11 @@ private:
 
     wgpu::Buffer tileVertexBuffer;
     wgpu::Buffer tileIndexBuffer;
-    wgpu::Texture tileTexture;
-    wgpu::BindGroup tileMaterialBindGroup;
     wgpu::BindGroup tileMeshBindGroup;
     wgpu::Buffer tileMeshDataBuffer;
     Model tileModel;
+    Material tileMaterial;
+
+    wgpu::Texture tileTexture;
+    wgpu::BindGroup tileMaterialBindGroup;
 };

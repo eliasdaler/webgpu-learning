@@ -359,6 +359,20 @@ void Game::init()
     cameraPos = glm::vec3(0.0f, 3.0f, 5.0f);
     initCamera();
 
+    createMeshDrawingPipeline();
+    initSceneData();
+
+    createYaeModel();
+    createFloorTile();
+
+    createSpriteDrawingPipeline();
+    createSprite();
+
+    initImGui();
+}
+
+void Game::initSceneData()
+{
     { // per frame data buffer
         const auto bufferDesc = wgpu::BufferDescriptor{
             .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
@@ -393,15 +407,25 @@ void Game::init()
         queue.WriteBuffer(directionalLightBuffer, 0, &dirLightData, sizeof(DirectionalLightData));
     }
 
-    createMeshDrawingPipeline();
-    createSpriteDrawingPipeline();
+    { // per frame data
+        const std::array<wgpu::BindGroupEntry, 2> bindings{{
+            {
+                .binding = 0,
+                .buffer = frameDataBuffer,
+            },
+            {
+                .binding = 1,
+                .buffer = directionalLightBuffer,
+            },
+        }};
+        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .layout = perFrameDataGroupLayout.Get(),
+            .entryCount = bindings.size(),
+            .entries = bindings.data(),
+        };
 
-    createSprite();
-
-    createYaeModel();
-    createFloorTile();
-
-    initImGui();
+        perFrameBindGroup = device.CreateBindGroup(&bindGroupDesc);
+    }
 }
 
 void Game::createYaeModel()
@@ -411,10 +435,6 @@ void Game::createYaeModel()
     // let's assume one mesh for now
     assert(model.meshes.size() == 1);
     auto& mesh = model.meshes[0];
-
-    // load diffuse texture
-    modelTexture = util::
-        loadTexture(device, queue, mesh.diffuseTexturePath, wgpu::TextureFormat::RGBA8UnormSrgb);
 
     { // vertex buffer
         const auto bufferDesc = wgpu::BufferDescriptor{
@@ -450,56 +470,7 @@ void Game::createYaeModel()
         queue.WriteBuffer(modelDataBuffer, 0, &md, sizeof(MeshData));
     }
 
-    { // per frame data
-        const std::array<wgpu::BindGroupEntry, 2> bindings{{
-            {
-                .binding = 0,
-                .buffer = frameDataBuffer,
-            },
-            {
-                .binding = 1,
-                .buffer = directionalLightBuffer,
-            },
-        }};
-        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
-            .layout = perFrameDataGroupLayout.Get(),
-            .entryCount = bindings.size(),
-            .entries = bindings.data(),
-        };
-
-        perFrameBindGroup = device.CreateBindGroup(&bindGroupDesc);
-    }
-
-    { // material data
-        const auto textureViewDesc = wgpu::TextureViewDescriptor{
-            .format = wgpu::TextureFormat::RGBA8UnormSrgb,
-            .dimension = wgpu::TextureViewDimension::e2D,
-            .baseMipLevel = 0,
-            .mipLevelCount = 1,
-            .baseArrayLayer = 0,
-            .arrayLayerCount = 1,
-            .aspect = wgpu::TextureAspect::All,
-        };
-        const auto textureView = modelTexture.CreateView(&textureViewDesc);
-
-        const std::array<wgpu::BindGroupEntry, 2> bindings{{
-            {
-                .binding = 0,
-                .textureView = textureView,
-            },
-            {
-                .binding = 1,
-                .sampler = nearestSampler,
-            },
-        }};
-        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
-            .layout = materialGroupLayout.Get(),
-            .entryCount = bindings.size(),
-            .entries = bindings.data(),
-        };
-
-        materialBindGroup = device.CreateBindGroup(&bindGroupDesc);
-    }
+    meshMaterial = makeMaterial(mesh.diffuseTexturePath, nearestSampler);
 
     { // mesh bind group
         const std::array<wgpu::BindGroupEntry, 1> bindings{{
@@ -905,14 +876,51 @@ void Game::initCamera()
     cameraProj = glm::perspective(glm::radians(fov), aspect, 0.1f, 100.0f);
 }
 
+Game::Material Game::makeMaterial(
+    const std::filesystem::path& diffusePath,
+    const wgpu::Sampler& sampler)
+{
+    Material material;
+
+    material.texture =
+        util::loadTexture(device, queue, diffusePath, wgpu::TextureFormat::RGBA8UnormSrgb);
+
+    { // material data
+        const auto textureViewDesc = wgpu::TextureViewDescriptor{
+            .format = wgpu::TextureFormat::RGBA8UnormSrgb,
+            .dimension = wgpu::TextureViewDimension::e2D,
+            .baseMipLevel = 0,
+            .mipLevelCount = 1,
+            .baseArrayLayer = 0,
+            .arrayLayerCount = 1,
+            .aspect = wgpu::TextureAspect::All,
+        };
+        const auto textureView = material.texture.CreateView(&textureViewDesc);
+
+        const std::array<wgpu::BindGroupEntry, 2> bindings{{
+            {
+                .binding = 0,
+                .textureView = textureView,
+            },
+            {
+                .binding = 1,
+                .sampler = sampler,
+            },
+        }};
+        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .layout = materialGroupLayout.Get(),
+            .entryCount = bindings.size(),
+            .entries = bindings.data(),
+        };
+
+        material.bindGroup = device.CreateBindGroup(&bindGroupDesc);
+    }
+
+    return material;
+}
+
 void Game::createFloorTile()
 {
-    tileTexture = util::loadTexture(
-        device,
-        queue,
-        "assets/textures/wood_floor_deck_diff_512px.jpg",
-        wgpu::TextureFormat::RGBA8UnormSrgb);
-
     tileModel = util::loadModel("assets/models/tile.gltf");
     // let's assume one mesh for now
     assert(model.meshes.size() == 1);
@@ -952,36 +960,7 @@ void Game::createFloorTile()
         queue.WriteBuffer(tileMeshDataBuffer, 0, &md, sizeof(MeshData));
     }
 
-    { // material data
-        const auto textureViewDesc = wgpu::TextureViewDescriptor{
-            .format = wgpu::TextureFormat::RGBA8UnormSrgb,
-            .dimension = wgpu::TextureViewDimension::e2D,
-            .baseMipLevel = 0,
-            .mipLevelCount = 1,
-            .baseArrayLayer = 0,
-            .arrayLayerCount = 1,
-            .aspect = wgpu::TextureAspect::All,
-        };
-        const auto textureView = tileTexture.CreateView(&textureViewDesc);
-
-        const std::array<wgpu::BindGroupEntry, 2> bindings{{
-            {
-                .binding = 0,
-                .textureView = textureView,
-            },
-            {
-                .binding = 1,
-                .sampler = nearestSampler,
-            },
-        }};
-        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
-            .layout = materialGroupLayout.Get(),
-            .entryCount = bindings.size(),
-            .entries = bindings.data(),
-        };
-
-        tileMaterialBindGroup = device.CreateBindGroup(&bindGroupDesc);
-    }
+    tileMaterial = makeMaterial("assets/textures/wood_floor_deck_diff_512px.jpg", nearestSampler);
 
     { // mesh bind group
         const std::array<wgpu::BindGroupEntry, 1> bindings{{
@@ -1180,7 +1159,7 @@ void Game::render()
 
             renderPass.SetPipeline(meshPipeline);
             renderPass.SetBindGroup(0, perFrameBindGroup, 0, nullptr);
-            renderPass.SetBindGroup(1, materialBindGroup, 0, nullptr);
+            renderPass.SetBindGroup(1, meshMaterial.bindGroup, 0, nullptr);
             renderPass.SetBindGroup(2, meshBindGroup, 0, nullptr);
 
             { // model
@@ -1195,7 +1174,7 @@ void Game::render()
                 renderPass.DrawIndexed(mesh.indices.size(), 1, 0, 0, 0);
             }
 
-            renderPass.SetBindGroup(1, tileMaterialBindGroup, 0, nullptr);
+            renderPass.SetBindGroup(1, tileMaterial.bindGroup, 0, nullptr);
             renderPass.SetBindGroup(2, tileMeshBindGroup, 0, nullptr);
             { // floor tile
                 auto& mesh = tileModel.meshes[0];
