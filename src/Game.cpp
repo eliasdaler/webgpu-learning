@@ -264,9 +264,16 @@ void Game::init()
 
     surface = std::make_unique<wgpu::Surface>(util::CreateSurfaceForSDLWindow(instance, window));
 
+    // better for debug
+    const char* const enabledToggles[] = {"dump_shaders", "disable_symbol_renaming"};
+    wgpu::DawnTogglesDescriptor deviceTogglesDesc;
+    deviceTogglesDesc.enabledToggles = enabledToggles;
+    deviceTogglesDesc.enabledToggleCount = 2;
+
     // TODO: set limits
     const auto requiredLimits = wgpu::RequiredLimits{};
     const auto deviceDesc = wgpu::DeviceDescriptor{
+        .nextInChain = &deviceTogglesDesc,
         .label = "Device",
         .requiredLimits = &requiredLimits,
     };

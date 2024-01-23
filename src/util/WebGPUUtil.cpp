@@ -78,6 +78,7 @@ wgpu::Texture loadTexture(
     assert(format == wgpu::TextureFormat::RGBA8UnormSrgb && "other formats are not yet supported");
 
     const auto textureDesc = wgpu::TextureDescriptor{
+        .label = path.string().c_str(), // sadly these labels don't show up in RenderDoc
         .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
         .dimension = wgpu::TextureDimension::e2D,
         .size =
