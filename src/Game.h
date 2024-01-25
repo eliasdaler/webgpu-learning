@@ -6,6 +6,8 @@
 #include <webgpu/webgpu_cpp.h>
 
 #include <Graphics/Camera.h>
+#include <Graphics/GPUMesh.h>
+#include <Graphics/Material.h>
 #include <Graphics/Model.h>
 
 #include "FreeCameraController.h"
@@ -21,16 +23,6 @@ public:
         int screenHeight = 480;
 
         std::string windowTitle = "Game";
-    };
-
-    struct GPUMesh {
-        wgpu::Buffer vertexBuffer;
-        wgpu::Buffer indexBuffer;
-    };
-
-    struct Material {
-        wgpu::Texture texture;
-        wgpu::BindGroup bindGroup;
     };
 
 public:

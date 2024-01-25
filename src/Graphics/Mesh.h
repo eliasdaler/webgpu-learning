@@ -18,10 +18,6 @@ struct Mesh {
     };
     static_assert(sizeof(Mesh::Vertex) % 4 == 0);
 
-    ~Mesh();
-
-    void initGeometry();
-
     std::vector<Vertex> vertices;
     std::vector<std::uint16_t> indices;
 

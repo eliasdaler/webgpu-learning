@@ -1,9 +1,11 @@
 #include "Game.h"
 
-#include "util/GltfLoader.h"
-#include "util/OSUtil.h"
-#include "util/SDLWebGPU.h"
-#include "util/WebGPUUtil.h"
+#include <util/GltfLoader.h>
+#include <util/OSUtil.h>
+#include <util/SDLWebGPU.h>
+#include <util/WebGPUUtil.h>
+
+#include <Graphics/Util.h>
 
 #include <SDL.h>
 
@@ -437,7 +439,7 @@ void Game::createYaeModel()
     assert(model.meshes.size() == 1);
     auto& mesh = model.meshes[0];
 
-    yaeMesh = makeGPUMesh(mesh);
+    yaeMesh = util::makeGPUMesh(device, queue, mesh);
 
     { // mesh data buffer
         const auto bufferDesc = wgpu::BufferDescriptor{
@@ -453,7 +455,8 @@ void Game::createYaeModel()
         queue.WriteBuffer(modelDataBuffer, 0, &md, sizeof(MeshData));
     }
 
-    meshMaterial = makeMaterial(mesh.diffuseTexturePath, nearestSampler);
+    meshMaterial = util::
+        makeMaterial(device, queue, mesh.diffuseTexturePath, materialGroupLayout, nearestSampler);
 
     { // mesh bind group
         const std::array<wgpu::BindGroupEntry, 1> bindings{{
@@ -855,76 +858,6 @@ void Game::initCamera()
     camera.setPosition(startPos);
 }
 
-Game::Material Game::makeMaterial(
-    const std::filesystem::path& diffusePath,
-    const wgpu::Sampler& sampler)
-{
-    Material material;
-
-    material.texture =
-        util::loadTexture(device, queue, diffusePath, wgpu::TextureFormat::RGBA8UnormSrgb);
-
-    { // material data
-        const auto textureViewDesc = wgpu::TextureViewDescriptor{
-            .format = wgpu::TextureFormat::RGBA8UnormSrgb,
-            .dimension = wgpu::TextureViewDimension::e2D,
-            .baseMipLevel = 0,
-            .mipLevelCount = 1,
-            .baseArrayLayer = 0,
-            .arrayLayerCount = 1,
-            .aspect = wgpu::TextureAspect::All,
-        };
-        const auto textureView = material.texture.CreateView(&textureViewDesc);
-
-        const std::array<wgpu::BindGroupEntry, 2> bindings{{
-            {
-                .binding = 0,
-                .textureView = textureView,
-            },
-            {
-                .binding = 1,
-                .sampler = sampler,
-            },
-        }};
-        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
-            .layout = materialGroupLayout.Get(),
-            .entryCount = bindings.size(),
-            .entries = bindings.data(),
-        };
-
-        material.bindGroup = device.CreateBindGroup(&bindGroupDesc);
-    }
-
-    return material;
-}
-
-Game::GPUMesh Game::makeGPUMesh(const Mesh& cpuMesh)
-{
-    GPUMesh mesh;
-
-    { // vertex buffer
-        const auto bufferDesc = wgpu::BufferDescriptor{
-            .usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst,
-            .size = cpuMesh.vertices.size() * sizeof(Mesh::Vertex),
-        };
-
-        mesh.vertexBuffer = device.CreateBuffer(&bufferDesc);
-        queue.WriteBuffer(mesh.vertexBuffer, 0, cpuMesh.vertices.data(), bufferDesc.size);
-    }
-
-    { // index buffer
-        const auto bufferDesc = wgpu::BufferDescriptor{
-            .usage = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst,
-            .size = cpuMesh.indices.size() * sizeof(std::uint16_t),
-        };
-
-        mesh.indexBuffer = device.CreateBuffer(&bufferDesc);
-        queue.WriteBuffer(mesh.indexBuffer, 0, cpuMesh.indices.data(), bufferDesc.size);
-    }
-
-    return mesh;
-}
-
 void Game::createFloorTile()
 {
     auto tileModel = util::loadModel("assets/models/tile.gltf");
@@ -932,7 +865,7 @@ void Game::createFloorTile()
     assert(tileModel.meshes.size() == 1);
     auto& mesh = tileModel.meshes[0];
 
-    tileMesh = makeGPUMesh(mesh);
+    tileMesh = util::makeGPUMesh(device, queue, mesh);
 
     { // mesh data buffer
         const auto bufferDesc = wgpu::BufferDescriptor{
@@ -948,7 +881,12 @@ void Game::createFloorTile()
         queue.WriteBuffer(tileMeshDataBuffer, 0, &md, sizeof(MeshData));
     }
 
-    tileMaterial = makeMaterial("assets/textures/wood_floor_deck_diff_512px.jpg", nearestSampler);
+    tileMaterial = util::makeMaterial(
+        device,
+        queue,
+        "assets/textures/wood_floor_deck_diff_512px.jpg",
+        materialGroupLayout,
+        nearestSampler);
 
     { // mesh bind group
         const std::array<wgpu::BindGroupEntry, 1> bindings{{
