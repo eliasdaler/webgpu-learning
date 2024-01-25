@@ -14,10 +14,10 @@ glm::vec2 getStickState(const StickBindings& bindings)
 {
     glm::vec2 stick{};
     if (isKeyPressed(bindings.up)) {
-        stick.y += 1.f;
+        stick.y -= 1.f;
     }
     if (isKeyPressed(bindings.down)) {
-        stick.y -= 1.f;
+        stick.y += 1.f;
     }
     if (isKeyPressed(bindings.left)) {
         stick.x -= 1.f;
