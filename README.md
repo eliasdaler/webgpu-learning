@@ -1,6 +1,6 @@
 # Learning WebGPU
 
-## Latest screenshot
+![gltf_scene_loading](screenshots/5_gltf_scene_loading.png)
 
 ## Building
 
