@@ -358,7 +358,6 @@ void Game::init()
     };
     nearestSampler = device.CreateSampler(&samplerDesc);
 
-    cameraPos = glm::vec3(0.0f, 3.0f, 5.0f);
     initCamera();
 
     createMeshDrawingPipeline();
@@ -384,8 +383,8 @@ void Game::initSceneData()
         frameDataBuffer = device.CreateBuffer(&bufferDesc);
 
         const auto ud = PerFrameData{
-            .viewProj = cameraProj * cameraView,
-            .cameraPos = glm::vec4(cameraPos, 1.f),
+            .viewProj = camera.getViewProj(),
+            .cameraPos = glm::vec4(camera.getPosition(), 1.f),
         };
         queue.WriteBuffer(frameDataBuffer, 0, &ud, sizeof(PerFrameData));
     }
@@ -846,18 +845,14 @@ void Game::createSprite()
 
 void Game::initCamera()
 {
-    glm::vec3 cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
-    cameraDirection = glm::normalize(cameraPos - cameraTarget);
+    static const float zNear = 0.1f;
+    static const float zFar = 1000.f;
+    static const float fovX = glm::radians(60.f);
+    static const float aspectRatio = (float)params.screenWidth / (float)params.screenHeight;
+    static const glm::vec3 startPos{0.f, 1.f, -5.f};
 
-    glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
-    glm::vec3 cameraRight = glm::normalize(glm::cross(up, cameraDirection));
-    glm::vec3 cameraUp = glm::cross(cameraDirection, cameraRight);
-
-    cameraView = glm::lookAt(cameraPos, glm::vec3(0.0f, 0.0f, 0.0f), cameraUp);
-
-    const auto fov = 45.f;
-    const auto aspect = (float)params.screenWidth / (float)params.screenHeight;
-    cameraProj = glm::perspective(glm::radians(fov), aspect, 0.1f, 100.0f);
+    camera.init(glm::radians(60.f), zNear, zFar, aspectRatio);
+    camera.setPosition(startPos);
 }
 
 Game::Material Game::makeMaterial(
@@ -1019,6 +1014,7 @@ void Game::loop()
             ImGui::NewFrame();
 
             // update
+            handleInput(dt);
             update(dt);
 
             accumulator -= dt;
@@ -1039,12 +1035,20 @@ void Game::loop()
     }
 }
 
+void Game::handleInput(float dt)
+{
+    cameraController.handleInput(camera);
+}
+
 void Game::update(float dt)
 {
+    cameraController.update(camera, dt);
+
     { // per frame data
+
         PerFrameData ud{
-            .viewProj = cameraProj * cameraView,
-            .cameraPos = glm::vec4(cameraPos, 1.f),
+            .viewProj = camera.getViewProj(),
+            .cameraPos = glm::vec4(camera.getPosition(), 1.f),
         };
         queue.WriteBuffer(frameDataBuffer, 0, &ud, sizeof(PerFrameData));
     }
@@ -1066,10 +1070,10 @@ void Game::update(float dt)
 void Game::updateDevTools(float dt)
 {
     ImGui::Begin("WebGPU Dear ImGui");
-    ImGui::Text("Dear ImGui is the best");
-    ImGui::Button("Yes");
-    ImGui::SameLine();
-    ImGui::Button("Yes");
+    {
+        const auto cameraPos = camera.getPosition();
+        ImGui::Text("Camera pos: %.2f, %.2f, %.2f", cameraPos.x, cameraPos.y, cameraPos.z);
+    }
     ImGui::End();
 
     // ImGui::ShowDemoWindow();
@@ -1105,7 +1109,7 @@ void Game::render()
         const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
         renderPass.PushDebugGroup("Draw BG");
 
-#if 1
+#if 0
         { // draw sprites
             renderPass.SetPipeline(spritePipeline);
             renderPass.SetBindGroup(0, spriteBindGroup, 0, nullptr);

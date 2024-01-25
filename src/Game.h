@@ -5,7 +5,10 @@
 
 #include <webgpu/webgpu_cpp.h>
 
+#include <Graphics/Camera.h>
 #include <Graphics/Model.h>
+
+#include "FreeCameraController.h"
 
 struct SDL_Window;
 
@@ -49,6 +52,7 @@ private:
 
     void loop();
     void update(float dt);
+    void handleInput(float dt);
     void updateDevTools(float dt);
     void render();
     void quit();
@@ -117,13 +121,11 @@ private:
     wgpu::Buffer spriteIndexBuffer;
     wgpu::Texture spriteTexture;
 
-    glm::vec3 cameraPos;
-    glm::vec3 cameraDirection;
-    glm::mat4 cameraView;
-    glm::mat4 cameraProj;
-
     wgpu::BindGroup tileMeshBindGroup;
     wgpu::Buffer tileMeshDataBuffer;
     Material tileMaterial;
     GPUMesh tileMesh;
+
+    Camera camera;
+    FreeCameraController cameraController;
 };

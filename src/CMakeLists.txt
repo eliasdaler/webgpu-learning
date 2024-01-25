@@ -1,12 +1,17 @@
 add_executable(game
+  Math/Transform.cpp
+
+  Graphics/Camera.cpp
   Graphics/Mesh.cpp
 
   util/GltfLoader.cpp
   util/ImageLoader.cpp
+  util/InputUtil.cpp
   util/OSUtil.cpp
   util/SDLWebGPU.cpp
   util/WebGPUUtil.cpp
 
+  FreeCameraController.cpp
   Game.cpp
   main.cpp
 )
