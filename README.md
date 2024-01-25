@@ -16,11 +16,11 @@
 
 22.01.24 - simple Blinn-Phong lighting
 
-![model](screenshots/4_blinn_phong.png)
+![blinn_phong](screenshots/4_blinn_phong.png)
 
 25.01.24 - loading complex glTF scenes
 
-![model](screenshots/5_scene_loading.png)
+![gltf_scene_loading](screenshots/5_gltf_scene_loading.png)
 
 ## Building
 
