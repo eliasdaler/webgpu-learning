@@ -9,6 +9,7 @@
 #include <Graphics/GPUMesh.h>
 #include <Graphics/Material.h>
 #include <Graphics/Model.h>
+#include <Graphics/Scene.h>
 
 #include "FreeCameraController.h"
 
@@ -38,9 +39,6 @@ private:
     void createYaeModel();
     void createFloorTile();
     void initImGui();
-
-    Material makeMaterial(const std::filesystem::path& diffusePath, const wgpu::Sampler& sampler);
-    GPUMesh makeGPUMesh(const Mesh& cpuMesh);
 
     void loop();
     void update(float dt);
@@ -100,6 +98,7 @@ private:
 
     wgpu::Buffer modelDataBuffer;
     wgpu::BindGroup meshBindGroup;
+    glm::vec3 yaePos;
     float modelRotationAngle{0.f};
     Material meshMaterial;
     GPUMesh yaeMesh;
@@ -120,4 +119,28 @@ private:
 
     Camera camera;
     FreeCameraController cameraController;
+
+    Scene scene;
+
+    static const std::size_t NULL_ENTITY_ID = std::numeric_limits<std::size_t>::max();
+    static const std::size_t NULL_MESH_ID = std::numeric_limits<std::size_t>::max();
+
+    struct Entity {
+        std::size_t id{NULL_ENTITY_ID};
+        std::string name;
+
+        // transform
+        Transform transform;
+
+        // mesh
+        std::size_t meshIdx{NULL_ENTITY_ID};
+        wgpu::Buffer meshDataBuffer;
+        wgpu::BindGroup meshBindGroup;
+    };
+
+    std::vector<std::unique_ptr<Entity>> entities;
+    Entity& makeNewEntity();
+
+    void createEntitiesFromScene(const Scene& scene);
+    void createEntitiesFromNode(const SceneNode& node);
 };

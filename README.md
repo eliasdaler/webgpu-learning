@@ -18,6 +18,10 @@
 
 ![model](screenshots/4_blinn_phong.png)
 
+25.01.24 - loading complex glTF scenes
+
+![model](screenshots/5_scene_loading.png)
+
 ## Building
 
 I'm using [SDL](https://github.com/libsdl-org/SDL) for windows/input and [Google Dawn](https://github.com/google/dawn) as a WebGPU backend. Everything is built from source.

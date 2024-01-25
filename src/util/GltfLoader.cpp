@@ -6,6 +6,7 @@
 
 #include <Graphics/GPUMesh.h>
 #include <Graphics/Model.h>
+#include <Graphics/Scene.h>
 #include <Graphics/Util.h>
 
 #include "WebGPUUtil.h"
@@ -146,8 +147,10 @@ void loadPrimitive(
     mesh.name = meshName;
 
     if (primitive.material != -1) {
-        mesh.diffuseTexturePath =
-            getDiffuseTexturePath(model, model.materials[primitive.material], "");
+        if (hasDiffuseTexture(model.materials[primitive.material])) {
+            mesh.diffuseTexturePath =
+                getDiffuseTexturePath(model, model.materials[primitive.material], "");
+        }
     }
 
     if (primitive.indices != -1) { // load indices
@@ -301,7 +304,12 @@ bool shouldSkipNode(const tinygltf::Node& node)
         return true;
     }
 
-    if (node.name.starts_with("Collision") || node.name.starts_with("Trigger")) {
+    if (node.camera != -1) {
+        return true;
+    }
+
+    if (node.name.starts_with("Collision") || node.name.starts_with("Trigger") ||
+        node.name.starts_with("PlayerSpawn") || node.name.starts_with("Interact")) {
         return true;
     }
 
@@ -323,7 +331,7 @@ Transform loadTransform(const tinygltf::Node& gltfNode)
     return transform;
 }
 
-void loadNode(util::SceneNode& node, const tinygltf::Node& gltfNode, const tinygltf::Model& model)
+void loadNode(SceneNode& node, const tinygltf::Node& gltfNode, const tinygltf::Model& model)
 {
     node.transform = loadTransform(gltfNode);
 
@@ -335,7 +343,7 @@ void loadNode(util::SceneNode& node, const tinygltf::Node& gltfNode, const tinyg
         }
 
         auto& childPtr = node.children[childIdx];
-        childPtr = std::make_unique<util::SceneNode>();
+        childPtr = std::make_unique<SceneNode>();
         loadNode(*childPtr, childNode, model);
 
         assert(gltfNode.mesh != -1);
@@ -377,15 +385,14 @@ Model loadModel(const std::filesystem::path& path)
     return model;
 }
 
-Scene loadScene(const LoadContext& context, const std::filesystem::path& path)
+void loadScene(const LoadContext& ctx, Scene& scene, const std::filesystem::path& path)
 {
-    const auto& device = context.device;
-    const auto& queue = context.queue;
-    const auto& materialLayout = context.materialLayout;
-    const auto& sampler = context.defaultSampler;
+    const auto& device = ctx.device;
+    const auto& queue = ctx.queue;
+    const auto& materialLayout = ctx.materialLayout;
+    const auto& sampler = ctx.defaultSampler;
 
     const auto fileDir = path.parent_path();
-    Scene scene;
 
     tinygltf::Model gltfModel;
     loadFile(gltfModel, path);
@@ -400,7 +407,7 @@ Scene loadScene(const LoadContext& context, const std::filesystem::path& path)
         if (hasDiffuseTexture(gltfMaterial)) {
             // load diffuse
             const auto texturePath = getDiffuseTexturePath(gltfModel, gltfMaterial, fileDir);
-            loadMaterial(context, material, texturePath);
+            loadMaterial(ctx, material, texturePath);
             //  TODO: generate mip maps here
         } else {
             material.baseColor = getDiffuseColor(gltfMaterial);
@@ -425,7 +432,7 @@ Scene loadScene(const LoadContext& context, const std::filesystem::path& path)
             Mesh cpuMesh;
             loadPrimitive(gltfModel, gltfMesh.name, gltfPrimitive, cpuMesh);
 
-            loadGPUMesh(context, cpuMesh, primitive.mesh);
+            loadGPUMesh(ctx, cpuMesh, primitive.mesh);
         }
     }
 
@@ -439,11 +446,14 @@ Scene loadScene(const LoadContext& context, const std::filesystem::path& path)
 
         auto& nodePtr = scene.nodes[nodeIdx];
         nodePtr = std::make_unique<SceneNode>();
-        nodePtr->name = gltfNode.name;
-        loadNode(*nodePtr, gltfNode, gltfModel);
-    }
+        auto& node = *nodePtr;
 
-    return scene;
+        node.name = gltfNode.name;
+        assert(gltfNode.mesh != -1);
+        node.meshIndex = static_cast<std::size_t>(gltfNode.mesh);
+
+        loadNode(node, gltfNode, gltfModel);
+    }
 }
 
 }

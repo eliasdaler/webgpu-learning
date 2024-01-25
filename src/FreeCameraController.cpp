@@ -50,3 +50,9 @@ void FreeCameraController::update(Camera& camera, float dt)
     freeCameraPitch += rotationVelocity.y * dt;
     camera.setYawPitch(freeCameraYaw, freeCameraPitch);
 }
+
+void FreeCameraController::setYawPitch(float yaw, float pitch)
+{
+    freeCameraYaw = yaw;
+    freeCameraPitch = pitch;
+}

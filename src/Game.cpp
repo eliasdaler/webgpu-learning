@@ -365,6 +365,7 @@ void Game::init()
     createMeshDrawingPipeline();
     initSceneData();
 
+    yaePos = {1.4f, 0.f, 0.f};
     createYaeModel();
     createFloorTile();
 
@@ -673,7 +674,68 @@ void Game::createMeshDrawingPipeline()
         .materialLayout = materialGroupLayout,
         .defaultSampler = nearestSampler,
     };
-    auto houseScene = util::loadScene(loadContext, "assets/levels/house/house.gltf");
+
+    util::loadScene(loadContext, scene, "assets/levels/house/house.gltf");
+    createEntitiesFromScene(scene);
+}
+
+void Game::createEntitiesFromScene(const Scene& scene)
+{
+    for (const auto& nodePtr : scene.nodes) {
+        if (nodePtr) {
+            createEntitiesFromNode(*nodePtr);
+        }
+    }
+}
+
+void Game::createEntitiesFromNode(const SceneNode& node)
+{
+    auto& e = makeNewEntity();
+    e.name = node.name;
+    e.transform = node.transform;
+    e.meshIdx = node.meshIndex;
+
+    const auto bufferDesc = wgpu::BufferDescriptor{
+        .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
+        .size = sizeof(MeshData),
+    };
+
+    // TODO: do this in every frame for dynamic entities!
+    e.meshDataBuffer = device.CreateBuffer(&bufferDesc);
+    const auto md = MeshData{
+        .model = e.transform.asMatrix(),
+    };
+    queue.WriteBuffer(e.meshDataBuffer, 0, &md, sizeof(MeshData));
+
+    { // mesh bind group
+        const std::array<wgpu::BindGroupEntry, 1> bindings{{
+            {
+                .binding = 0,
+                .buffer = e.meshDataBuffer,
+            },
+        }};
+        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .layout = meshGroupLayout.Get(),
+            .entryCount = bindings.size(),
+            .entries = bindings.data(),
+        };
+
+        e.meshBindGroup = device.CreateBindGroup(&bindGroupDesc);
+    }
+
+    for (const auto& childPtr : node.children) {
+        if (childPtr) {
+            createEntitiesFromNode(*childPtr);
+        }
+    }
+}
+
+Game::Entity& Game::makeNewEntity()
+{
+    entities.push_back(std::make_unique<Entity>());
+    auto& e = *entities.back();
+    e.id = entities.size() - 1;
+    return e;
 }
 
 void Game::createSpriteDrawingPipeline()
@@ -860,9 +922,11 @@ void Game::initCamera()
     static const float zFar = 1000.f;
     static const float fovX = glm::radians(60.f);
     static const float aspectRatio = (float)params.screenWidth / (float)params.screenHeight;
-    static const glm::vec3 startPos{0.f, 1.f, -5.f};
 
     camera.init(glm::radians(60.f), zNear, zFar, aspectRatio);
+
+    const auto startPos = glm::vec3{6.64f, 3.33f, 5.28f};
+    cameraController.setYawPitch(-2.5f, 0.2f);
     camera.setPosition(startPos);
 }
 
@@ -1002,6 +1066,7 @@ void Game::update(float dt)
     { // update mesh
         modelRotationAngle += 0.5f * dt;
         glm::mat4 meshTransform{1.f};
+        meshTransform = glm::translate(meshTransform, yaePos);
         meshTransform = glm::rotate(meshTransform, modelRotationAngle, glm::vec3{0.f, 1.f, 0.f});
 
         MeshData md{
@@ -1019,6 +1084,9 @@ void Game::updateDevTools(float dt)
     {
         const auto cameraPos = camera.getPosition();
         ImGui::Text("Camera pos: %.2f, %.2f, %.2f", cameraPos.x, cameraPos.y, cameraPos.z);
+        const auto yaw = cameraController.getYaw();
+        const auto pitch = cameraController.getPitch();
+        ImGui::Text("Camera rotation: (yaw) %.2f, (pitch) %.2f", yaw, pitch);
     }
     ImGui::End();
 
@@ -1113,10 +1181,23 @@ void Game::render()
                 drawMesh(renderPass, yaeMesh);
             }
 
+#if 0
             { // floor tile
                 renderPass.SetBindGroup(1, tileMaterial.bindGroup, 0, nullptr);
                 renderPass.SetBindGroup(2, tileMeshBindGroup, 0, nullptr);
                 drawMesh(renderPass, tileMesh);
+            }
+#endif
+
+            for (const auto& ePtr : entities) {
+                const auto& e = *ePtr;
+                const auto& mesh = scene.meshes[e.meshIdx];
+                renderPass.SetBindGroup(2, e.meshBindGroup, 0, nullptr);
+                for (const auto& primitive : mesh.primitives) {
+                    const auto& material = scene.materials[primitive.materialIndex];
+                    renderPass.SetBindGroup(1, material.bindGroup, 0, nullptr);
+                    drawMesh(renderPass, primitive.mesh);
+                }
             }
         }
 
