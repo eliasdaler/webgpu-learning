@@ -666,6 +666,14 @@ void Game::createMeshDrawingPipeline()
 
         meshPipeline = device.CreateRenderPipeline(&pipelineDesc);
     }
+
+    util::LoadContext loadContext{
+        .device = device,
+        .queue = queue,
+        .materialLayout = materialGroupLayout,
+        .defaultSampler = nearestSampler,
+    };
+    auto houseScene = util::loadScene(loadContext, "assets/levels/house/house.gltf");
 }
 
 void Game::createSpriteDrawingPipeline()

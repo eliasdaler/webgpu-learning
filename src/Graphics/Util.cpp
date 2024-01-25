@@ -44,7 +44,7 @@ Material makeMaterial(
 {
     Material material;
 
-    material.texture =
+    material.diffuseTexture =
         util::loadTexture(device, queue, diffusePath, wgpu::TextureFormat::RGBA8UnormSrgb);
 
     { // material data
@@ -57,7 +57,7 @@ Material makeMaterial(
             .arrayLayerCount = 1,
             .aspect = wgpu::TextureAspect::All,
         };
-        const auto textureView = material.texture.CreateView(&textureViewDesc);
+        const auto textureView = material.diffuseTexture.CreateView(&textureViewDesc);
 
         const std::array<wgpu::BindGroupEntry, 2> bindings{{
             {

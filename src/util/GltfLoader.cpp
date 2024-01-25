@@ -1,9 +1,12 @@
 #include "GltfLoader.h"
 
 #include <cassert>
+#include <iostream>
 #include <span>
 
+#include <Graphics/GPUMesh.h>
 #include <Graphics/Model.h>
+#include <Graphics/Util.h>
 
 #include "WebGPUUtil.h"
 
@@ -92,6 +95,19 @@ int findAttributeAccessor(const tinygltf::Primitive& primitive, const std::strin
     return -1;
 }
 
+bool hasDiffuseTexture(const tinygltf::Material& material)
+{
+    const auto textureIndex = material.pbrMetallicRoughness.baseColorTexture.index;
+    return textureIndex != -1;
+}
+
+glm::vec4 getDiffuseColor(const tinygltf::Material& material)
+{
+    const auto c = material.pbrMetallicRoughness.baseColorFactor;
+    assert(c.size() == 4);
+    return {(float)c[0], (float)c[1], (float)c[2], (float)c[3]};
+}
+
 template<typename T>
 std::span<const T> getPackedBufferSpan(
     const tinygltf::Model& model,
@@ -112,24 +128,26 @@ bool hasAccessor(const tinygltf::Primitive& primitive, const std::string& attrib
 
 std::filesystem::path getDiffuseTexturePath(
     const tinygltf::Model& model,
-    const tinygltf::Material& material)
+    const tinygltf::Material& material,
+    const std::filesystem::path& fileDir)
 {
     const auto textureIndex = material.pbrMetallicRoughness.baseColorTexture.index;
     const auto& textureId = model.textures[textureIndex];
     const auto& image = model.images[textureId.source];
-    return image.uri;
+    return fileDir / image.uri;
 }
 
-Mesh loadMesh(
+void loadPrimitive(
     const tinygltf::Model& model,
     const std::string& meshName,
-    const tinygltf::Primitive& primitive)
+    const tinygltf::Primitive& primitive,
+    Mesh& mesh)
 {
-    Mesh mesh;
     mesh.name = meshName;
 
     if (primitive.material != -1) {
-        mesh.diffuseTexturePath = getDiffuseTexturePath(model, model.materials[primitive.material]);
+        mesh.diffuseTexturePath =
+            getDiffuseTexturePath(model, model.materials[primitive.material], "");
     }
 
     if (primitive.indices != -1) { // load indices
@@ -182,8 +200,147 @@ Mesh loadMesh(
             mesh.vertices[i].uv = uvs[i];
         }
     }
+}
 
-    return mesh;
+void loadFile(tinygltf::Model& gltfModel, const std::filesystem::path& path)
+{
+    tinygltf::TinyGLTF loader;
+    loader.SetImageLoader(::LoadImageData, nullptr);
+    loader.SetImageWriter(::WriteImageData, nullptr);
+
+    std::string err;
+    std::string warn;
+
+    bool res = loader.LoadASCIIFromFile(&gltfModel, &err, &warn, path.string());
+    if (!warn.empty()) {
+        std::cout << "WARNING: " << warn << std::endl;
+    }
+    if (!res) {
+        std::cout << "Failed to load glTF scene " << path << std::endl;
+        if (!err.empty()) {
+            std::cout << "ERROR: " << err << std::endl;
+        }
+        assert(false);
+    }
+}
+
+void loadMaterial(
+    const util::LoadContext& ctx,
+    Material& material,
+    const std::filesystem::path& diffusePath)
+{
+    // copy-pasted from Graphics/Util.cpp, but become a lot more complex soon
+
+    material.diffuseTexture =
+        util::loadTexture(ctx.device, ctx.queue, diffusePath, wgpu::TextureFormat::RGBA8UnormSrgb);
+
+    { // material data
+        const auto textureViewDesc = wgpu::TextureViewDescriptor{
+            .format = wgpu::TextureFormat::RGBA8UnormSrgb,
+            .dimension = wgpu::TextureViewDimension::e2D,
+            .baseMipLevel = 0,
+            .mipLevelCount = 1,
+            .baseArrayLayer = 0,
+            .arrayLayerCount = 1,
+            .aspect = wgpu::TextureAspect::All,
+        };
+        const auto textureView = material.diffuseTexture.CreateView(&textureViewDesc);
+
+        const std::array<wgpu::BindGroupEntry, 2> bindings{{
+            {
+                .binding = 0,
+                .textureView = textureView,
+            },
+            {
+                .binding = 1,
+                .sampler = ctx.defaultSampler,
+            },
+        }};
+        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .layout = ctx.materialLayout.Get(),
+            .entryCount = bindings.size(),
+            .entries = bindings.data(),
+        };
+
+        material.bindGroup = ctx.device.CreateBindGroup(&bindGroupDesc);
+    }
+}
+
+void loadGPUMesh(const util::LoadContext ctx, const Mesh& cpuMesh, GPUMesh& gpuMesh)
+{
+    // copy-pasted from Graphics/Util.cpp, but become a lot more complex soon
+
+    { // vertex buffer
+        const auto bufferDesc = wgpu::BufferDescriptor{
+            .usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst,
+            .size = cpuMesh.vertices.size() * sizeof(Mesh::Vertex),
+        };
+
+        gpuMesh.vertexBuffer = ctx.device.CreateBuffer(&bufferDesc);
+        ctx.queue.WriteBuffer(gpuMesh.vertexBuffer, 0, cpuMesh.vertices.data(), bufferDesc.size);
+    }
+
+    { // index buffer
+        const auto bufferDesc = wgpu::BufferDescriptor{
+            .usage = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst,
+            .size = cpuMesh.indices.size() * sizeof(std::uint16_t),
+        };
+
+        gpuMesh.indexBuffer = ctx.device.CreateBuffer(&bufferDesc);
+        ctx.queue.WriteBuffer(gpuMesh.indexBuffer, 0, cpuMesh.indices.data(), bufferDesc.size);
+    }
+}
+
+bool shouldSkipNode(const tinygltf::Node& node)
+{
+    if (node.mesh == -1) {
+        return true;
+    }
+
+    if (node.light != -1) {
+        return true;
+    }
+
+    if (node.name.starts_with("Collision") || node.name.starts_with("Trigger")) {
+        return true;
+    }
+
+    return false;
+}
+
+Transform loadTransform(const tinygltf::Node& gltfNode)
+{
+    Transform transform;
+    if (!gltfNode.translation.empty()) {
+        transform.position = tg2glm(gltfNode.translation);
+    }
+    if (!gltfNode.scale.empty()) {
+        transform.scale = tg2glm(gltfNode.scale);
+    }
+    if (!gltfNode.rotation.empty()) {
+        transform.heading = tg2glmQuat(gltfNode.rotation);
+    }
+    return transform;
+}
+
+void loadNode(util::SceneNode& node, const tinygltf::Node& gltfNode, const tinygltf::Model& model)
+{
+    node.transform = loadTransform(gltfNode);
+
+    node.children.resize(gltfNode.children.size());
+    for (std::size_t childIdx = 0; childIdx < gltfNode.children.size(); ++childIdx) {
+        const auto& childNode = model.nodes[gltfNode.children[childIdx]];
+        if (shouldSkipNode(childNode)) {
+            continue;
+        }
+
+        auto& childPtr = node.children[childIdx];
+        childPtr = std::make_unique<util::SceneNode>();
+        loadNode(*childPtr, childNode, model);
+
+        assert(gltfNode.mesh != -1);
+        childPtr->meshIndex = static_cast<std::size_t>(gltfNode.mesh);
+    }
 }
 
 }
@@ -195,29 +352,12 @@ Model loadModel(const std::filesystem::path& path)
 {
     Model model;
 
-    tinygltf::TinyGLTF loader;
-    loader.SetImageLoader(::LoadImageData, nullptr);
-    loader.SetImageWriter(::WriteImageData, nullptr);
-
     tinygltf::Model gltfModel;
-    std::string err;
-    std::string warn;
+    loadFile(gltfModel, path);
 
-    bool res = loader.LoadASCIIFromFile(&gltfModel, &err, &warn, path.string());
-    if (!warn.empty()) {
-        printf("WARN: %s\n", warn.c_str());
-    }
-    if (!res) {
-        printf("Failed to load glTF scene: %s\n", path.string().c_str());
-        if (!err.empty()) {
-            printf("ERR: %s\n", err.c_str());
-        }
-        assert(false);
-    }
-
-    auto& scene = gltfModel.scenes[gltfModel.defaultScene];
-    auto& gltfNode = gltfModel.nodes[scene.nodes[0]];
-    auto& mesh = gltfModel.meshes[gltfNode.mesh];
+    const auto& scene = gltfModel.scenes[gltfModel.defaultScene];
+    const auto& gltfNode = gltfModel.nodes[scene.nodes[0]];
+    const auto& mesh = gltfModel.meshes[gltfNode.mesh];
     if (!gltfNode.translation.empty()) {
         model.position = tg2glm(gltfNode.translation);
     }
@@ -229,10 +369,81 @@ Model loadModel(const std::filesystem::path& path)
     }
 
     for (const auto& p : mesh.primitives) {
-        Mesh mesh = loadMesh(gltfModel, mesh.name, p);
-        model.meshes.push_back(std::move(mesh));
+        Mesh m;
+        loadPrimitive(gltfModel, mesh.name, p, m);
+        model.meshes.push_back(std::move(m));
     }
 
     return model;
 }
+
+Scene loadScene(const LoadContext& context, const std::filesystem::path& path)
+{
+    const auto& device = context.device;
+    const auto& queue = context.queue;
+    const auto& materialLayout = context.materialLayout;
+    const auto& sampler = context.defaultSampler;
+
+    const auto fileDir = path.parent_path();
+    Scene scene;
+
+    tinygltf::Model gltfModel;
+    loadFile(gltfModel, path);
+
+    const auto& gltfScene = gltfModel.scenes[gltfModel.defaultScene];
+
+    // load materials
+    scene.materials.resize(gltfModel.materials.size());
+    for (std::size_t materialIdx = 0; materialIdx < gltfModel.materials.size(); ++materialIdx) {
+        const auto& gltfMaterial = gltfModel.materials[materialIdx];
+        auto& material = scene.materials[materialIdx];
+        if (hasDiffuseTexture(gltfMaterial)) {
+            // load diffuse
+            const auto texturePath = getDiffuseTexturePath(gltfModel, gltfMaterial, fileDir);
+            loadMaterial(context, material, texturePath);
+            //  TODO: generate mip maps here
+        } else {
+            material.baseColor = getDiffuseColor(gltfMaterial);
+            // TODO: bind group not created, but should be!
+        }
+        material.name = gltfMaterial.name;
+    }
+
+    // load meshes
+    scene.meshes.resize(gltfModel.meshes.size());
+    for (std::size_t meshIdx = 0; meshIdx < gltfModel.meshes.size(); ++meshIdx) {
+        const auto& gltfMesh = gltfModel.meshes[meshIdx];
+        auto& mesh = scene.meshes[meshIdx];
+        mesh.primitives.resize(gltfMesh.primitives.size());
+        for (std::size_t primitiveIdx = 0; primitiveIdx < gltfMesh.primitives.size();
+             ++primitiveIdx) {
+            const auto& gltfPrimitive = gltfMesh.primitives[primitiveIdx];
+            auto& primitive = mesh.primitives[primitiveIdx];
+            // TODO: handle case when primitive doesn't have a material
+            primitive.materialIndex = static_cast<std::size_t>(gltfPrimitive.material);
+
+            Mesh cpuMesh;
+            loadPrimitive(gltfModel, gltfMesh.name, gltfPrimitive, cpuMesh);
+
+            loadGPUMesh(context, cpuMesh, primitive.mesh);
+        }
+    }
+
+    // load nodes
+    scene.nodes.resize(gltfScene.nodes.size());
+    for (std::size_t nodeIdx = 0; nodeIdx < gltfScene.nodes.size(); ++nodeIdx) {
+        const auto& gltfNode = gltfModel.nodes[gltfScene.nodes[nodeIdx]];
+        if (shouldSkipNode(gltfNode)) {
+            continue;
+        }
+
+        auto& nodePtr = scene.nodes[nodeIdx];
+        nodePtr = std::make_unique<SceneNode>();
+        nodePtr->name = gltfNode.name;
+        loadNode(*nodePtr, gltfNode, gltfModel);
+    }
+
+    return scene;
+}
+
 }
