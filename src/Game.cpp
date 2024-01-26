@@ -5,8 +5,6 @@
 #include <util/SDLWebGPU.h>
 #include <util/WebGPUUtil.h>
 
-#include <Graphics/Util.h>
-
 #include <SDL.h>
 
 #include <cstdint>
@@ -365,10 +363,22 @@ void Game::init()
     createMeshDrawingPipeline();
     initSceneData();
 
-    yaePos = {1.4f, 0.f, 0.f};
+    util::LoadContext loadContext{
+        .device = device,
+        .queue = queue,
+        .materialLayout = materialGroupLayout,
+        .defaultSampler = nearestSampler,
+    };
 
-    createYaeModel();
-    createFloorTile();
+    util::loadScene(loadContext, yaeScene, "assets/models/yae.gltf");
+    createEntitiesFromScene(yaeScene);
+
+    const glm::vec3 yaePos{1.4f, 0.f, 0.f};
+    auto& yae = findEntityByName("yae_mer");
+    yae.transform.position = yaePos;
+
+    util::loadScene(loadContext, scene, "assets/levels/house/house.gltf");
+    createEntitiesFromScene(scene);
 
     createSpriteDrawingPipeline();
     createSprite();
@@ -430,50 +440,6 @@ void Game::initSceneData()
         };
 
         perFrameBindGroup = device.CreateBindGroup(&bindGroupDesc);
-    }
-}
-
-void Game::createYaeModel()
-{
-    // load model
-    auto model = util::loadModel("assets/models/yae.gltf");
-    // let's assume one mesh for now
-    assert(model.meshes.size() == 1);
-    auto& mesh = model.meshes[0];
-
-    yaeMesh = util::makeGPUMesh(device, queue, mesh);
-
-    { // mesh data buffer
-        const auto bufferDesc = wgpu::BufferDescriptor{
-            .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
-            .size = sizeof(MeshData),
-        };
-
-        modelDataBuffer = device.CreateBuffer(&bufferDesc);
-
-        const auto md = MeshData{
-            .model = glm::mat4{1.f},
-        };
-        queue.WriteBuffer(modelDataBuffer, 0, &md, sizeof(MeshData));
-    }
-
-    meshMaterial = util::
-        makeMaterial(device, queue, mesh.diffuseTexturePath, materialGroupLayout, nearestSampler);
-
-    { // mesh bind group
-        const std::array<wgpu::BindGroupEntry, 1> bindings{{
-            {
-                .binding = 0,
-                .buffer = modelDataBuffer,
-            },
-        }};
-        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
-            .layout = meshGroupLayout.Get(),
-            .entryCount = bindings.size(),
-            .entries = bindings.data(),
-        };
-
-        meshBindGroup = device.CreateBindGroup(&bindGroupDesc);
     }
 }
 
@@ -668,32 +634,24 @@ void Game::createMeshDrawingPipeline()
 
         meshPipeline = device.CreateRenderPipeline(&pipelineDesc);
     }
-
-    util::LoadContext loadContext{
-        .device = device,
-        .queue = queue,
-        .materialLayout = materialGroupLayout,
-        .defaultSampler = nearestSampler,
-    };
-
-    util::loadScene(loadContext, scene, "assets/levels/house/house.gltf");
-    createEntitiesFromScene(scene);
 }
 
 void Game::createEntitiesFromScene(const Scene& scene)
 {
     for (const auto& nodePtr : scene.nodes) {
         if (nodePtr) {
-            createEntitiesFromNode(*nodePtr);
+            createEntitiesFromNode(scene, *nodePtr);
         }
     }
 }
 
-void Game::createEntitiesFromNode(const SceneNode& node)
+void Game::createEntitiesFromNode(const Scene& scene, const SceneNode& node)
 {
     auto& e = makeNewEntity();
     e.name = node.name;
     e.transform = node.transform;
+
+    e.scene = &scene;
     e.meshIdx = node.meshIndex;
 
     const auto bufferDesc = wgpu::BufferDescriptor{
@@ -726,7 +684,7 @@ void Game::createEntitiesFromNode(const SceneNode& node)
 
     for (const auto& childPtr : node.children) {
         if (childPtr) {
-            createEntitiesFromNode(*childPtr);
+            createEntitiesFromNode(scene, *childPtr);
         }
     }
 }
@@ -737,6 +695,17 @@ Game::Entity& Game::makeNewEntity()
     auto& e = *entities.back();
     e.id = entities.size() - 1;
     return e;
+}
+
+Game::Entity& Game::findEntityByName(std::string_view name) const
+{
+    for (const auto& ePtr : entities) {
+        if (ePtr->name == name) {
+            return *ePtr;
+        }
+    }
+
+    throw std::runtime_error(std::string{"failed to find entity with name "} + std::string{name});
 }
 
 void Game::createSpriteDrawingPipeline()
@@ -931,53 +900,6 @@ void Game::initCamera()
     camera.setPosition(startPos);
 }
 
-void Game::createFloorTile()
-{
-    auto tileModel = util::loadModel("assets/models/tile.gltf");
-    // let's assume one mesh for now
-    assert(tileModel.meshes.size() == 1);
-    auto& mesh = tileModel.meshes[0];
-
-    tileMesh = util::makeGPUMesh(device, queue, mesh);
-
-    { // mesh data buffer
-        const auto bufferDesc = wgpu::BufferDescriptor{
-            .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
-            .size = sizeof(MeshData),
-        };
-
-        tileMeshDataBuffer = device.CreateBuffer(&bufferDesc);
-
-        const auto md = MeshData{
-            .model = glm::mat4{1.f},
-        };
-        queue.WriteBuffer(tileMeshDataBuffer, 0, &md, sizeof(MeshData));
-    }
-
-    tileMaterial = util::makeMaterial(
-        device,
-        queue,
-        "assets/textures/wood_floor_deck_diff_512px.jpg",
-        materialGroupLayout,
-        nearestSampler);
-
-    { // mesh bind group
-        const std::array<wgpu::BindGroupEntry, 1> bindings{{
-            {
-                .binding = 0,
-                .buffer = tileMeshDataBuffer,
-            },
-        }};
-        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
-            .layout = meshGroupLayout.Get(),
-            .entryCount = bindings.size(),
-            .entries = bindings.data(),
-        };
-
-        tileMeshBindGroup = device.CreateBindGroup(&bindGroupDesc);
-    }
-}
-
 void Game::initImGui()
 {
     ImGui::CreateContext();
@@ -1064,16 +986,14 @@ void Game::update(float dt)
         queue.WriteBuffer(frameDataBuffer, 0, &ud, sizeof(PerFrameData));
     }
 
-    { // update mesh
-        modelRotationAngle += 0.5f * dt;
-        glm::mat4 meshTransform{1.f};
-        meshTransform = glm::translate(meshTransform, yaePos);
-        meshTransform = glm::rotate(meshTransform, modelRotationAngle, glm::vec3{0.f, 1.f, 0.f});
+    // upload mesh data (TODO: only do it if transform changed)
+    for (const auto& ePtr : entities) {
+        auto& e = *ePtr;
 
         MeshData md{
-            .model = meshTransform,
+            .model = e.transform.asMatrix(),
         };
-        queue.WriteBuffer(modelDataBuffer, 0, &md, sizeof(MeshData));
+        queue.WriteBuffer(e.meshDataBuffer, 0, &md, sizeof(MeshData));
     }
 
     updateDevTools(dt);
@@ -1166,6 +1086,9 @@ void Game::render()
         const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
         renderPass.PushDebugGroup("Draw meshes");
 
+        renderPass.SetPipeline(meshPipeline);
+        renderPass.SetBindGroup(0, perFrameBindGroup, 0);
+
         auto drawMesh = [](const wgpu::RenderPassEncoder& renderPass, const GPUMesh& mesh) {
             renderPass.SetVertexBuffer(0, mesh.vertexBuffer, 0, wgpu::kWholeSize);
             renderPass
@@ -1173,31 +1096,18 @@ void Game::render()
             renderPass.DrawIndexed(mesh.indexBuffer.GetSize() / sizeof(std::uint16_t), 1, 0, 0, 0);
         };
 
-        { // draw mesh
-
-            renderPass.SetPipeline(meshPipeline);
-            renderPass.SetBindGroup(0, perFrameBindGroup, 0, nullptr);
-
-            { // yae
-                renderPass.SetBindGroup(1, meshMaterial.bindGroup, 0, nullptr);
-                renderPass.SetBindGroup(2, meshBindGroup, 0, nullptr);
-                drawMesh(renderPass, yaeMesh);
-            }
-
-            // TODO: sort by material?
-            for (const auto& dc : drawCommands) {
-                const auto& material = scene.materials[dc.materialIndex];
-                renderPass.SetBindGroup(1, material.bindGroup, 0, nullptr);
-                renderPass.SetBindGroup(2, dc.meshBindGroup, 0, nullptr);
-                drawMesh(renderPass, dc.mesh);
-            }
+        // TODO: sort by material?
+        for (const auto& dc : drawCommands) {
+            renderPass.SetBindGroup(1, dc.material.bindGroup, 0);
+            renderPass.SetBindGroup(2, dc.meshBindGroup, 0);
+            drawMesh(renderPass, dc.mesh);
         }
 
         renderPass.PopDebugGroup();
         renderPass.End();
     }
 
-    {
+    { // Dear ImGui
         const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
             .view = nextFrameTexture,
             .loadOp = wgpu::LoadOp::Load,
@@ -1233,14 +1143,15 @@ void Game::generateDrawList()
 
     for (const auto& ePtr : entities) {
         const auto& e = *ePtr;
-        const auto& mesh = scene.meshes[e.meshIdx];
+        assert(e.scene);
+        const auto& mesh = e.scene->meshes[e.meshIdx];
         for (const auto& primitive : mesh.primitives) {
             // TODO: draw frustum culling here
-            const auto& material = scene.materials[primitive.materialIndex];
+            const auto& material = e.scene->materials[primitive.materialIndex];
             drawCommands.push_back(DrawCommand{
                 .mesh = primitive.mesh,
                 .meshBindGroup = e.meshBindGroup,
-                .materialIndex = primitive.materialIndex,
+                .material = material,
             });
         }
     }

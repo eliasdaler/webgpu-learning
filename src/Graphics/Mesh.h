@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -21,6 +20,5 @@ struct Mesh {
     std::vector<Vertex> vertices;
     std::vector<std::uint16_t> indices;
 
-    std::filesystem::path diffuseTexturePath;
     std::string name;
 };

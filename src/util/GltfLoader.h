@@ -12,9 +12,6 @@ struct Scene;
 
 namespace util
 {
-
-Model loadModel(const std::filesystem::path& path);
-
 struct LoadContext {
     const wgpu::Device& device;
     const wgpu::Queue& queue;

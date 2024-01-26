@@ -5,9 +5,7 @@
 #include <span>
 
 #include <Graphics/GPUMesh.h>
-#include <Graphics/Model.h>
 #include <Graphics/Scene.h>
-#include <Graphics/Util.h>
 
 #include "WebGPUUtil.h"
 
@@ -145,13 +143,6 @@ void loadPrimitive(
     Mesh& mesh)
 {
     mesh.name = meshName;
-
-    if (primitive.material != -1) {
-        if (hasDiffuseTexture(model.materials[primitive.material])) {
-            mesh.diffuseTexturePath =
-                getDiffuseTexturePath(model, model.materials[primitive.material], "");
-        }
-    }
 
     if (primitive.indices != -1) { // load indices
         const auto& indexAccessor = model.accessors[primitive.indices];
@@ -355,36 +346,6 @@ void loadNode(SceneNode& node, const tinygltf::Node& gltfNode, const tinygltf::M
 
 namespace util
 {
-
-Model loadModel(const std::filesystem::path& path)
-{
-    Model model;
-
-    tinygltf::Model gltfModel;
-    loadFile(gltfModel, path);
-
-    const auto& scene = gltfModel.scenes[gltfModel.defaultScene];
-    const auto& gltfNode = gltfModel.nodes[scene.nodes[0]];
-    const auto& mesh = gltfModel.meshes[gltfNode.mesh];
-    if (!gltfNode.translation.empty()) {
-        model.position = tg2glm(gltfNode.translation);
-    }
-    if (!gltfNode.scale.empty()) {
-        model.scale = tg2glm(gltfNode.scale);
-    }
-    if (!gltfNode.rotation.empty()) {
-        model.rotation = tg2glmQuat(gltfNode.rotation);
-    }
-
-    for (const auto& p : mesh.primitives) {
-        Mesh m;
-        loadPrimitive(gltfModel, mesh.name, p, m);
-        model.meshes.push_back(std::move(m));
-    }
-
-    return model;
-}
-
 void loadScene(const LoadContext& ctx, Scene& scene, const std::filesystem::path& path)
 {
     const auto& device = ctx.device;

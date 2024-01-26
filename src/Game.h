@@ -8,7 +8,6 @@
 #include <Graphics/Camera.h>
 #include <Graphics/GPUMesh.h>
 #include <Graphics/Material.h>
-#include <Graphics/Model.h>
 #include <Graphics/Scene.h>
 
 #include "FreeCameraController.h"
@@ -36,8 +35,6 @@ private:
     void createMeshDrawingPipeline();
     void createSpriteDrawingPipeline();
     void createSprite();
-    void createYaeModel();
-    void createFloorTile();
     void initImGui();
 
     void loop();
@@ -98,13 +95,6 @@ private:
     wgpu::Texture depthTexture;
     wgpu::TextureView depthTextureView;
 
-    wgpu::Buffer modelDataBuffer;
-    wgpu::BindGroup meshBindGroup;
-    glm::vec3 yaePos;
-    float modelRotationAngle{0.f};
-    Material meshMaterial;
-    GPUMesh yaeMesh;
-
     wgpu::ShaderModule spriteShaderModule;
     wgpu::BindGroupLayout spriteBindGroupLayout;
     wgpu::RenderPipeline spritePipeline;
@@ -114,20 +104,16 @@ private:
     wgpu::Buffer spriteIndexBuffer;
     wgpu::Texture spriteTexture;
 
-    wgpu::BindGroup tileMeshBindGroup;
-    wgpu::Buffer tileMeshDataBuffer;
-    Material tileMaterial;
-    GPUMesh tileMesh;
-
     Camera camera;
     FreeCameraController cameraController;
 
     Scene scene;
+    Scene yaeScene;
 
     struct DrawCommand {
-        GPUMesh mesh;
+        const GPUMesh& mesh;
         wgpu::BindGroup meshBindGroup;
-        std::size_t materialIndex;
+        const Material& material;
     };
 
     std::vector<DrawCommand> drawCommands;
@@ -142,7 +128,8 @@ private:
         // transform
         Transform transform;
 
-        // mesh
+        // mesh (only one mesh per entity supported for now)
+        const Scene* scene{nullptr};
         std::size_t meshIdx{NULL_ENTITY_ID};
         wgpu::Buffer meshDataBuffer;
         wgpu::BindGroup meshBindGroup;
@@ -150,7 +137,8 @@ private:
 
     std::vector<std::unique_ptr<Entity>> entities;
     Entity& makeNewEntity();
+    Entity& findEntityByName(std::string_view name) const;
 
     void createEntitiesFromScene(const Scene& scene);
-    void createEntitiesFromNode(const SceneNode& node);
+    void createEntitiesFromNode(const Scene& scene, const SceneNode& node);
 };
