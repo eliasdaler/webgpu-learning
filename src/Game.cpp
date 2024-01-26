@@ -366,6 +366,7 @@ void Game::init()
     initSceneData();
 
     yaePos = {1.4f, 0.f, 0.f};
+
     createYaeModel();
     createFloorTile();
 
@@ -1095,6 +1096,8 @@ void Game::updateDevTools(float dt)
 
 void Game::render()
 {
+    generateDrawList();
+
     // cornflower blue <3
     static const wgpu::Color clearColor{100.f / 255.f, 149.f / 255.f, 237.f / 255.f, 255.f / 255.f};
 
@@ -1181,23 +1184,12 @@ void Game::render()
                 drawMesh(renderPass, yaeMesh);
             }
 
-#if 0
-            { // floor tile
-                renderPass.SetBindGroup(1, tileMaterial.bindGroup, 0, nullptr);
-                renderPass.SetBindGroup(2, tileMeshBindGroup, 0, nullptr);
-                drawMesh(renderPass, tileMesh);
-            }
-#endif
-
-            for (const auto& ePtr : entities) {
-                const auto& e = *ePtr;
-                const auto& mesh = scene.meshes[e.meshIdx];
-                renderPass.SetBindGroup(2, e.meshBindGroup, 0, nullptr);
-                for (const auto& primitive : mesh.primitives) {
-                    const auto& material = scene.materials[primitive.materialIndex];
-                    renderPass.SetBindGroup(1, material.bindGroup, 0, nullptr);
-                    drawMesh(renderPass, primitive.mesh);
-                }
+            // TODO: sort by material?
+            for (const auto& dc : drawCommands) {
+                const auto& material = scene.materials[dc.materialIndex];
+                renderPass.SetBindGroup(1, material.bindGroup, 0, nullptr);
+                renderPass.SetBindGroup(2, dc.meshBindGroup, 0, nullptr);
+                drawMesh(renderPass, dc.mesh);
             }
         }
 
@@ -1233,6 +1225,25 @@ void Game::render()
 
     // flush
     swapChain->Present();
+}
+
+void Game::generateDrawList()
+{
+    drawCommands.clear();
+
+    for (const auto& ePtr : entities) {
+        const auto& e = *ePtr;
+        const auto& mesh = scene.meshes[e.meshIdx];
+        for (const auto& primitive : mesh.primitives) {
+            // TODO: draw frustum culling here
+            const auto& material = scene.materials[primitive.materialIndex];
+            drawCommands.push_back(DrawCommand{
+                .mesh = primitive.mesh,
+                .meshBindGroup = e.meshBindGroup,
+                .materialIndex = primitive.materialIndex,
+            });
+        }
+    }
 }
 
 void Game::quit()

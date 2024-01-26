@@ -49,6 +49,8 @@ private:
     void cleanup();
     void shutdownImGui();
 
+    void generateDrawList();
+
     bool isRunning{false};
 
     Params params;
@@ -121,6 +123,14 @@ private:
     FreeCameraController cameraController;
 
     Scene scene;
+
+    struct DrawCommand {
+        GPUMesh mesh;
+        wgpu::BindGroup meshBindGroup;
+        std::size_t materialIndex;
+    };
+
+    std::vector<DrawCommand> drawCommands;
 
     static const std::size_t NULL_ENTITY_ID = std::numeric_limits<std::size_t>::max();
     static const std::size_t NULL_MESH_ID = std::numeric_limits<std::size_t>::max();
