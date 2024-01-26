@@ -1089,18 +1089,16 @@ void Game::render()
         renderPass.SetPipeline(meshPipeline);
         renderPass.SetBindGroup(0, perFrameBindGroup, 0);
 
-        auto drawMesh = [](const wgpu::RenderPassEncoder& renderPass, const GPUMesh& mesh) {
-            renderPass.SetVertexBuffer(0, mesh.vertexBuffer, 0, wgpu::kWholeSize);
-            renderPass
-                .SetIndexBuffer(mesh.indexBuffer, wgpu::IndexFormat::Uint16, 0, wgpu::kWholeSize);
-            renderPass.DrawIndexed(mesh.indexBuffer.GetSize() / sizeof(std::uint16_t), 1, 0, 0, 0);
-        };
-
         // TODO: sort by material?
         for (const auto& dc : drawCommands) {
             renderPass.SetBindGroup(1, dc.material.bindGroup, 0);
             renderPass.SetBindGroup(2, dc.meshBindGroup, 0);
-            drawMesh(renderPass, dc.mesh);
+
+            renderPass.SetVertexBuffer(0, dc.mesh.vertexBuffer, 0, wgpu::kWholeSize);
+            renderPass.SetIndexBuffer(
+                dc.mesh.indexBuffer, wgpu::IndexFormat::Uint16, 0, wgpu::kWholeSize);
+            renderPass
+                .DrawIndexed(dc.mesh.indexBuffer.GetSize() / sizeof(std::uint16_t), 1, 0, 0, 0);
         }
 
         renderPass.PopDebugGroup();
