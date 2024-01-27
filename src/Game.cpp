@@ -267,11 +267,12 @@ void Game::init()
 
     surface = std::make_unique<wgpu::Surface>(util::CreateSurfaceForSDLWindow(instance, window));
 
-    // better for debug
-    const char* const enabledToggles[] = {"dump_shaders", "disable_symbol_renaming"};
+    // better debugging
+    std::array<const char*, 3> enabledToggles{
+        "dump_shaders", "disable_symbol_renaming", "enable_immediate_error_handling"};
     wgpu::DawnTogglesDescriptor deviceTogglesDesc;
-    deviceTogglesDesc.enabledToggles = enabledToggles;
-    deviceTogglesDesc.enabledToggleCount = 2;
+    deviceTogglesDesc.enabledToggles = enabledToggles.data();
+    deviceTogglesDesc.enabledToggleCount = enabledToggles.size();
 
     // TODO: set limits?
     // it seems like not setting anything initializes everything to the minimums
