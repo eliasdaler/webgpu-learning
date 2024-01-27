@@ -223,12 +223,25 @@ void loadMaterial(
     Material& material,
     const std::filesystem::path& diffusePath)
 {
-    // copy-pasted from Graphics/Util.cpp, but become a lot more complex soon
-
     material.diffuseTexture =
         util::loadTexture(ctx.device, ctx.queue, diffusePath, wgpu::TextureFormat::RGBA8UnormSrgb);
 
     { // material data
+
+        { // data buffer
+            const auto bufferDesc = wgpu::BufferDescriptor{
+                .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
+                .size = sizeof(MaterialData),
+            };
+
+            material.dataBuffer = ctx.device.CreateBuffer(&bufferDesc);
+
+            const auto md = MaterialData{
+                .baseColor = material.baseColor,
+            };
+            ctx.queue.WriteBuffer(material.dataBuffer, 0, &md, sizeof(MaterialData));
+        }
+
         const auto textureViewDesc = wgpu::TextureViewDescriptor{
             .format = wgpu::TextureFormat::RGBA8UnormSrgb,
             .dimension = wgpu::TextureViewDimension::e2D,
@@ -240,13 +253,17 @@ void loadMaterial(
         };
         const auto textureView = material.diffuseTexture.CreateView(&textureViewDesc);
 
-        const std::array<wgpu::BindGroupEntry, 2> bindings{{
+        const std::array<wgpu::BindGroupEntry, 3> bindings{{
             {
                 .binding = 0,
-                .textureView = textureView,
+                .buffer = material.dataBuffer,
             },
             {
                 .binding = 1,
+                .textureView = textureView,
+            },
+            {
+                .binding = 2,
                 .sampler = ctx.defaultSampler,
             },
         }};

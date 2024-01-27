@@ -98,8 +98,13 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     return out;
 }
 
-@group(1) @binding(0) var texture: texture_2d<f32>;
-@group(1) @binding(1) var texSampler: sampler;
+struct MaterialData {
+    baseColor: vec4f,
+};
+
+@group(1) @binding(0) var<uniform> md: MaterialData;
+@group(1) @binding(1) var texture: texture_2d<f32>;
+@group(1) @binding(2) var texSampler: sampler;
 
 fn calculateSpecularBP(NoH: f32) -> f32 {
     let shininess = 32.0 * 4.0;
@@ -120,7 +125,7 @@ fn blinnPhongBRDF(diffuse: vec3f, n: vec3f, v: vec3f, l: vec3f, h: vec3f) -> vec
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    let diffuse = textureSample(texture, texSampler, in.uv).rgb;
+    let diffuse = md.baseColor.rgb * textureSample(texture, texSampler, in.uv).rgb;
 
     let ambient = vec3(0.05, 0.05, 0.05);
 
@@ -379,6 +384,7 @@ void Game::init()
     yae.transform.position = yaePos;
 
     util::loadScene(loadContext, scene, "assets/levels/house/house.gltf");
+    // util::loadScene(loadContext, scene, "assets/levels/city/city.gltf");
     createEntitiesFromScene(scene);
 
     createSpriteDrawingPipeline();
@@ -488,9 +494,17 @@ void Game::createMeshDrawingPipeline()
     }
 
     { // material data layout
-        const std::array<wgpu::BindGroupLayoutEntry, 2> bindGroupLayoutEntries{{
+        const std::array<wgpu::BindGroupLayoutEntry, 3> bindGroupLayoutEntries{{
             {
                 .binding = 0,
+                .visibility = wgpu::ShaderStage::Fragment,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::Uniform,
+                    },
+            },
+            {
+                .binding = 1,
                 .visibility = wgpu::ShaderStage::Fragment,
                 .texture =
                     {
@@ -499,7 +513,7 @@ void Game::createMeshDrawingPipeline()
                     },
             },
             {
-                .binding = 1,
+                .binding = 2,
                 .visibility = wgpu::ShaderStage::Fragment,
                 .sampler =
                     {

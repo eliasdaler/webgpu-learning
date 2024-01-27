@@ -58,6 +58,14 @@ wgpu::Device requestDevice(const wgpu::Adapter& adapter, wgpu::DeviceDescriptor 
 
 void padBufferToFourBytes(std::vector<std::uint16_t>& indices)
 {
+    if (indices.size() % 4 == 0) {
+        return;
+    }
+
+    if (indices.size() == 2) { // TEMP HACK for broken meshes
+        indices.push_back(0);
+    }
+
     assert(indices.size() % 3 == 0 && "Number of indices not divisible by 3");
     if (indices.size() % 6 != 0) {
         for (int i = 0; i < 3; ++i) {
