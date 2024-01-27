@@ -4,6 +4,8 @@
 
 #include <webgpu/webgpu_cpp.h>
 
+#include <glm/vec4.hpp>
+
 struct ImageData;
 
 namespace util
@@ -32,4 +34,13 @@ wgpu::Texture loadTexture(
     wgpu::TextureFormat format,
     const ImageData& data,
     const char* label = nullptr);
+
+// creates a 1x1 px texture of specified color
+wgpu::Texture createPixelTexture(
+    const wgpu::Device& device,
+    const wgpu::Queue& queue,
+    wgpu::TextureFormat format,
+    const glm::vec4& color,
+    const char* label = nullptr);
+
 } // namespace util

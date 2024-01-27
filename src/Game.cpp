@@ -357,17 +357,9 @@ void Game::init()
         depthTextureView = depthTexture.CreateView(&textureViewDesc);
     }
 
-    { // create 1x1 white texture
-        std::array<unsigned char, 4> rawPixelData{255, 255, 255, 255};
-        ImageData data{};
-        data.pixels = rawPixelData.data();
-        data.width = 1;
-        data.height = 1;
-        data.channels = 4;
-
-        whiteTexture =
-            util::loadTexture(device, queue, wgpu::TextureFormat::RGBA8Unorm, data, "white");
-    }
+    glm::vec4 whiteColor{1.f, 1.f, 1.f, 1.f};
+    whiteTexture = util::
+        createPixelTexture(device, queue, wgpu::TextureFormat::RGBA8Unorm, whiteColor, "white");
 
     const auto samplerDesc = wgpu::SamplerDescriptor{
         .addressModeU = wgpu::AddressMode::Repeat,

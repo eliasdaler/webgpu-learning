@@ -159,4 +159,24 @@ wgpu::Texture loadTexture(
     return texture;
 }
 
+wgpu::Texture createPixelTexture(
+    const wgpu::Device& device,
+    const wgpu::Queue& queue,
+    wgpu::TextureFormat format,
+    const glm::vec4& color,
+    const char* label)
+{
+    std::array<unsigned char, 4> rawPixelData{
+        static_cast<unsigned char>(color[0] * 255),
+        static_cast<unsigned char>(color[1] * 255),
+        static_cast<unsigned char>(color[2] * 255),
+        static_cast<unsigned char>(color[3] * 255)};
+    ImageData data{};
+    data.pixels = rawPixelData.data();
+    data.width = 1;
+    data.height = 1;
+    data.channels = 4;
+    return util::loadTexture(device, queue, format, data, label);
+}
+
 } // end of namespace util
