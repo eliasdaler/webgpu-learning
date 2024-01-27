@@ -84,9 +84,50 @@ wgpu::Texture loadTexture(
     assert(data.channels == 4);
     assert(data.pixels != nullptr);
     assert(format == wgpu::TextureFormat::RGBA8UnormSrgb && "other formats are not yet supported");
+    return loadTexture(device, queue, format, data, path.string().c_str());
 
     const auto textureDesc = wgpu::TextureDescriptor{
         .label = path.string().c_str(), // sadly these labels don't show up in RenderDoc
+        .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
+        .dimension = wgpu::TextureDimension::e2D,
+        .size =
+            {
+                .width = static_cast<std::uint32_t>(data.width),
+                .height = static_cast<std::uint32_t>(data.height),
+                .depthOrArrayLayers = 1,
+            },
+        .format = format,
+        .mipLevelCount = 1,
+        .sampleCount = 1,
+    };
+
+    auto texture = device.CreateTexture(&textureDesc);
+
+    // copy data to GPU
+    const wgpu::ImageCopyTexture destination{
+        .texture = texture,
+        .mipLevel = 0,
+        .origin = {0, 0, 0},
+    };
+    const wgpu::TextureDataLayout source{
+        .bytesPerRow = static_cast<std::uint32_t>(data.width * data.channels),
+        .rowsPerImage = static_cast<std::uint32_t>(data.height)};
+
+    const auto pixelsSize = data.width * data.height * data.channels;
+    queue.WriteTexture(&destination, (void*)data.pixels, pixelsSize, &source, &textureDesc.size);
+
+    return texture;
+}
+
+wgpu::Texture loadTexture(
+    const wgpu::Device& device,
+    const wgpu::Queue& queue,
+    wgpu::TextureFormat format,
+    const ImageData& data,
+    const char* label)
+{
+    const auto textureDesc = wgpu::TextureDescriptor{
+        .label = label, // sadly these labels don't show up in RenderDoc
         .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
         .dimension = wgpu::TextureDimension::e2D,
         .size =

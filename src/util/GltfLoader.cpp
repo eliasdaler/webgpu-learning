@@ -223,8 +223,13 @@ void loadMaterial(
     Material& material,
     const std::filesystem::path& diffusePath)
 {
-    material.diffuseTexture =
-        util::loadTexture(ctx.device, ctx.queue, diffusePath, wgpu::TextureFormat::RGBA8UnormSrgb);
+    auto texFormat = wgpu::TextureFormat::RGBA8Unorm;
+    if (!diffusePath.empty()) {
+        texFormat = wgpu::TextureFormat::RGBA8UnormSrgb;
+        material.diffuseTexture = util::loadTexture(ctx.device, ctx.queue, diffusePath, texFormat);
+    } else {
+        material.diffuseTexture = ctx.whiteTexture;
+    }
 
     { // material data
 
@@ -243,7 +248,7 @@ void loadMaterial(
         }
 
         const auto textureViewDesc = wgpu::TextureViewDescriptor{
-            .format = wgpu::TextureFormat::RGBA8UnormSrgb,
+            .format = texFormat,
             .dimension = wgpu::TextureViewDimension::e2D,
             .baseMipLevel = 0,
             .mipLevelCount = 1,
@@ -384,16 +389,15 @@ void loadScene(const LoadContext& ctx, Scene& scene, const std::filesystem::path
     for (std::size_t materialIdx = 0; materialIdx < gltfModel.materials.size(); ++materialIdx) {
         const auto& gltfMaterial = gltfModel.materials[materialIdx];
         auto& material = scene.materials[materialIdx];
-        if (hasDiffuseTexture(gltfMaterial)) {
-            // load diffuse
-            const auto texturePath = getDiffuseTexturePath(gltfModel, gltfMaterial, fileDir);
-            loadMaterial(ctx, material, texturePath);
-            //  TODO: generate mip maps here
-        } else {
-            material.baseColor = getDiffuseColor(gltfMaterial);
-            // TODO: bind group not created, but should be!
-        }
         material.name = gltfMaterial.name;
+        material.baseColor = getDiffuseColor(gltfMaterial);
+
+        std::filesystem::path diffusePath;
+        if (hasDiffuseTexture(gltfMaterial)) {
+            diffusePath = getDiffuseTexturePath(gltfModel, gltfMaterial, fileDir);
+        }
+
+        loadMaterial(ctx, material, diffusePath);
     }
 
     // load meshes

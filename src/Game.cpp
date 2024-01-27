@@ -1,6 +1,7 @@
 #include "Game.h"
 
 #include <util/GltfLoader.h>
+#include <util/ImageLoader.h>
 #include <util/OSUtil.h>
 #include <util/SDLWebGPU.h>
 #include <util/WebGPUUtil.h>
@@ -356,6 +357,18 @@ void Game::init()
         depthTextureView = depthTexture.CreateView(&textureViewDesc);
     }
 
+    { // create 1x1 white texture
+        std::array<unsigned char, 4> rawPixelData{255, 255, 255, 255};
+        ImageData data{};
+        data.pixels = rawPixelData.data();
+        data.width = 1;
+        data.height = 1;
+        data.channels = 4;
+
+        whiteTexture =
+            util::loadTexture(device, queue, wgpu::TextureFormat::RGBA8Unorm, data, "white");
+    }
+
     const auto samplerDesc = wgpu::SamplerDescriptor{
         .addressModeU = wgpu::AddressMode::Repeat,
         .addressModeV = wgpu::AddressMode::Repeat,
@@ -374,6 +387,7 @@ void Game::init()
         .queue = queue,
         .materialLayout = materialGroupLayout,
         .defaultSampler = nearestSampler,
+        .whiteTexture = whiteTexture,
     };
 
     util::loadScene(loadContext, yaeScene, "assets/models/yae.gltf");
@@ -383,8 +397,8 @@ void Game::init()
     auto& yae = findEntityByName("yae_mer");
     yae.transform.position = yaePos;
 
-    util::loadScene(loadContext, scene, "assets/levels/house/house.gltf");
-    // util::loadScene(loadContext, scene, "assets/levels/city/city.gltf");
+    // util::loadScene(loadContext, scene, "assets/levels/house/house.gltf");
+    util::loadScene(loadContext, scene, "assets/levels/city/city.gltf");
     createEntitiesFromScene(scene);
 
     createSpriteDrawingPipeline();

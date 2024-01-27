@@ -4,6 +4,8 @@
 
 #include <webgpu/webgpu_cpp.h>
 
+struct ImageData;
+
 namespace util
 {
 void initWebGPU();
@@ -23,4 +25,11 @@ wgpu::Texture loadTexture(
     const wgpu::Queue& queue,
     const std::filesystem::path& path,
     wgpu::TextureFormat format);
+
+wgpu::Texture loadTexture(
+    const wgpu::Device& device,
+    const wgpu::Queue& queue,
+    wgpu::TextureFormat format,
+    const ImageData& data,
+    const char* label = nullptr);
 } // namespace util

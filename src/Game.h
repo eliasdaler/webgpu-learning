@@ -154,4 +154,6 @@ private:
         EntityId parentId = NULL_ENTITY_ID);
 
     std::vector<DrawCommand> drawCommands;
+
+    wgpu::Texture whiteTexture;
 };

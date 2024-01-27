@@ -17,6 +17,8 @@ struct LoadContext {
     const wgpu::Queue& queue;
     const wgpu::BindGroupLayout& materialLayout;
     const wgpu::Sampler& defaultSampler;
+
+    const wgpu::Texture& whiteTexture;
 };
 
 void loadScene(const LoadContext& context, Scene& scene, const std::filesystem::path& path);

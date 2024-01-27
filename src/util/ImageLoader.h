@@ -24,6 +24,8 @@ struct ImageData {
     float* hdrPixels{nullptr};
     bool hdr{false};
     int comp{0};
+
+    bool shouldSTBFree{false};
 };
 
 namespace util

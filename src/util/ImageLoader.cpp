@@ -5,8 +5,10 @@
 
 ImageData::~ImageData()
 {
-    stbi_image_free(pixels);
-    stbi_image_free(hdrPixels);
+    if (shouldSTBFree) {
+        stbi_image_free(pixels);
+        stbi_image_free(hdrPixels);
+    }
 }
 
 namespace util
@@ -14,6 +16,7 @@ namespace util
 ImageData loadImage(const std::filesystem::path& p)
 {
     ImageData data;
+    data.shouldSTBFree = true;
     if (stbi_is_hdr(p.string().c_str())) {
         data.hdr = true;
         data.hdrPixels = stbi_loadf(p.string().c_str(), &data.width, &data.height, &data.comp, 4);
