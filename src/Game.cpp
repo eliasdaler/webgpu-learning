@@ -645,48 +645,69 @@ void Game::createEntitiesFromScene(const Scene& scene)
     }
 }
 
-void Game::createEntitiesFromNode(const Scene& scene, const SceneNode& node)
+Game::EntityId Game::createEntitiesFromNode(
+    const Scene& scene,
+    const SceneNode& node,
+    EntityId parentId)
 {
     auto& e = makeNewEntity();
-    e.name = node.name;
-    e.transform = node.transform;
+    e.tag = node.name;
 
-    e.scene = &scene;
-    e.meshIdx = node.meshIndex;
-
-    const auto bufferDesc = wgpu::BufferDescriptor{
-        .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
-        .size = sizeof(MeshData),
-    };
-
-    // TODO: do this in every frame for dynamic entities!
-    e.meshDataBuffer = device.CreateBuffer(&bufferDesc);
-    const auto md = MeshData{
-        .model = e.transform.asMatrix(),
-    };
-    queue.WriteBuffer(e.meshDataBuffer, 0, &md, sizeof(MeshData));
-
-    { // mesh bind group
-        const std::array<wgpu::BindGroupEntry, 1> bindings{{
-            {
-                .binding = 0,
-                .buffer = e.meshDataBuffer,
-            },
-        }};
-        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
-            .layout = meshGroupLayout.Get(),
-            .entryCount = bindings.size(),
-            .entries = bindings.data(),
-        };
-
-        e.meshBindGroup = device.CreateBindGroup(&bindGroupDesc);
-    }
-
-    for (const auto& childPtr : node.children) {
-        if (childPtr) {
-            createEntitiesFromNode(scene, *childPtr);
+    // transform
+    {
+        e.transform = node.transform;
+        if (parentId == NULL_ENTITY_ID) {
+            e.worldTransform = e.transform.asMatrix();
+        } else {
+            const auto& parent = entities[parentId];
+            e.worldTransform = parent->worldTransform * node.transform.asMatrix();
         }
     }
+
+    { // mesh
+        e.scene = &scene;
+        e.meshIdx = node.meshIndex;
+
+        const auto bufferDesc = wgpu::BufferDescriptor{
+            .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
+            .size = sizeof(MeshData),
+        };
+
+        // TODO: do this in every frame for dynamic entities!
+        e.meshDataBuffer = device.CreateBuffer(&bufferDesc);
+        const auto md = MeshData{
+            .model = e.worldTransform,
+        };
+        queue.WriteBuffer(e.meshDataBuffer, 0, &md, sizeof(MeshData));
+
+        { // mesh bind group
+            const std::array<wgpu::BindGroupEntry, 1> bindings{{
+                {
+                    .binding = 0,
+                    .buffer = e.meshDataBuffer,
+                },
+            }};
+            const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+                .layout = meshGroupLayout.Get(),
+                .entryCount = bindings.size(),
+                .entries = bindings.data(),
+            };
+
+            e.meshBindGroup = device.CreateBindGroup(&bindGroupDesc);
+        }
+    }
+
+    { // hierarchy
+        e.parentId = parentId;
+        for (const auto& childPtr : node.children) {
+            if (childPtr) {
+                const auto childId = createEntitiesFromNode(scene, *childPtr, e.id);
+                e.children.push_back(childId);
+            }
+        }
+    }
+
+    return e.id;
 }
 
 Game::Entity& Game::makeNewEntity()
@@ -700,7 +721,7 @@ Game::Entity& Game::makeNewEntity()
 Game::Entity& Game::findEntityByName(std::string_view name) const
 {
     for (const auto& ePtr : entities) {
-        if (ePtr->name == name) {
+        if (ePtr->tag == name) {
             return *ePtr;
         }
     }
@@ -986,17 +1007,39 @@ void Game::update(float dt)
         queue.WriteBuffer(frameDataBuffer, 0, &ud, sizeof(PerFrameData));
     }
 
-    // upload mesh data (TODO: only do it if transform changed)
-    for (const auto& ePtr : entities) {
-        auto& e = *ePtr;
-
-        MeshData md{
-            .model = e.transform.asMatrix(),
-        };
-        queue.WriteBuffer(e.meshDataBuffer, 0, &md, sizeof(MeshData));
-    }
+    updateEntityTransforms();
 
     updateDevTools(dt);
+}
+
+void Game::updateEntityTransforms()
+{
+    const auto I = glm::mat4{1.f};
+    for (auto& ePtr : entities) {
+        auto& e = *ePtr;
+        if (e.parentId == NULL_MESH_ID) {
+            updateEntityTransforms(e, I);
+        }
+    }
+}
+
+void Game::updateEntityTransforms(Entity& e, const glm::mat4& parentWorldTransform)
+{
+    const auto prevTransform = e.worldTransform;
+    e.worldTransform = parentWorldTransform * e.transform.asMatrix();
+    if (e.worldTransform == prevTransform) {
+        return;
+    }
+
+    MeshData md{
+        .model = e.worldTransform,
+    };
+    queue.WriteBuffer(e.meshDataBuffer, 0, &md, sizeof(MeshData));
+
+    for (const auto& childId : e.children) {
+        auto& child = *entities[childId];
+        updateEntityTransforms(child, e.worldTransform);
+    }
 }
 
 void Game::updateDevTools(float dt)

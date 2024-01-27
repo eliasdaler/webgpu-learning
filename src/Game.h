@@ -25,6 +25,36 @@ public:
         std::string windowTitle = "Game";
     };
 
+    static const std::size_t NULL_ENTITY_ID = std::numeric_limits<std::size_t>::max();
+    static const std::size_t NULL_MESH_ID = std::numeric_limits<std::size_t>::max();
+
+    using EntityId = std::size_t;
+
+    struct Entity {
+        EntityId id{NULL_ENTITY_ID};
+        std::string tag;
+
+        // transform
+        Transform transform; // local (relative to parent)
+        glm::mat4 worldTransform{1.f};
+
+        // hierarchy
+        EntityId parentId{NULL_ENTITY_ID};
+        std::vector<EntityId> children;
+
+        // mesh (only one mesh per entity supported for now)
+        const Scene* scene{nullptr};
+        std::size_t meshIdx{NULL_ENTITY_ID};
+        wgpu::Buffer meshDataBuffer;
+        wgpu::BindGroup meshBindGroup;
+    };
+
+    struct DrawCommand {
+        const GPUMesh& mesh;
+        wgpu::BindGroup meshBindGroup;
+        const Material& material;
+    };
+
 public:
     void start(Params params);
 
@@ -45,6 +75,9 @@ private:
     void quit();
     void cleanup();
     void shutdownImGui();
+
+    void updateEntityTransforms();
+    void updateEntityTransforms(Entity& e, const glm::mat4& parentWorldTransform);
 
     void generateDrawList();
 
@@ -110,35 +143,15 @@ private:
     Scene scene;
     Scene yaeScene;
 
-    struct DrawCommand {
-        const GPUMesh& mesh;
-        wgpu::BindGroup meshBindGroup;
-        const Material& material;
-    };
-
-    std::vector<DrawCommand> drawCommands;
-
-    static const std::size_t NULL_ENTITY_ID = std::numeric_limits<std::size_t>::max();
-    static const std::size_t NULL_MESH_ID = std::numeric_limits<std::size_t>::max();
-
-    struct Entity {
-        std::size_t id{NULL_ENTITY_ID};
-        std::string name;
-
-        // transform
-        Transform transform;
-
-        // mesh (only one mesh per entity supported for now)
-        const Scene* scene{nullptr};
-        std::size_t meshIdx{NULL_ENTITY_ID};
-        wgpu::Buffer meshDataBuffer;
-        wgpu::BindGroup meshBindGroup;
-    };
-
     std::vector<std::unique_ptr<Entity>> entities;
     Entity& makeNewEntity();
     Entity& findEntityByName(std::string_view name) const;
 
     void createEntitiesFromScene(const Scene& scene);
-    void createEntitiesFromNode(const Scene& scene, const SceneNode& node);
+    EntityId createEntitiesFromNode(
+        const Scene& scene,
+        const SceneNode& node,
+        EntityId parentId = NULL_ENTITY_ID);
+
+    std::vector<DrawCommand> drawCommands;
 };

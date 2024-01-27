@@ -324,8 +324,12 @@ Transform loadTransform(const tinygltf::Node& gltfNode)
 
 void loadNode(SceneNode& node, const tinygltf::Node& gltfNode, const tinygltf::Model& model)
 {
+    node.name = gltfNode.name;
     node.transform = loadTransform(gltfNode);
+    assert(gltfNode.mesh != -1);
+    node.meshIndex = static_cast<std::size_t>(gltfNode.mesh);
 
+    // load children
     node.children.resize(gltfNode.children.size());
     for (std::size_t childIdx = 0; childIdx < gltfNode.children.size(); ++childIdx) {
         const auto& childNode = model.nodes[gltfNode.children[childIdx]];
@@ -335,10 +339,8 @@ void loadNode(SceneNode& node, const tinygltf::Node& gltfNode, const tinygltf::M
 
         auto& childPtr = node.children[childIdx];
         childPtr = std::make_unique<SceneNode>();
-        loadNode(*childPtr, childNode, model);
-
-        assert(gltfNode.mesh != -1);
-        childPtr->meshIndex = static_cast<std::size_t>(gltfNode.mesh);
+        auto& child = *childPtr;
+        loadNode(child, childNode, model);
     }
 }
 
@@ -408,11 +410,6 @@ void loadScene(const LoadContext& ctx, Scene& scene, const std::filesystem::path
         auto& nodePtr = scene.nodes[nodeIdx];
         nodePtr = std::make_unique<SceneNode>();
         auto& node = *nodePtr;
-
-        node.name = gltfNode.name;
-        assert(gltfNode.mesh != -1);
-        node.meshIndex = static_cast<std::size_t>(gltfNode.mesh);
-
         loadNode(node, gltfNode, gltfModel);
     }
 }
