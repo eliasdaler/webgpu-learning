@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -12,6 +13,7 @@
 
 #include "FreeCameraController.h"
 #include "MaterialCache.h"
+#include "MeshCache.h"
 
 struct SDL_Window;
 
@@ -44,8 +46,7 @@ public:
         std::vector<EntityId> children;
 
         // mesh (only one mesh per entity supported for now)
-        const Scene* scene{nullptr};
-        std::size_t meshIdx{NULL_ENTITY_ID};
+        std::vector<MeshId> meshes;
         wgpu::Buffer meshDataBuffer;
         wgpu::BindGroup meshBindGroup;
     };
@@ -55,7 +56,7 @@ public:
         wgpu::BindGroup meshBindGroup;
 
         MaterialId materialIdx;
-        std::size_t indexBufferId;
+        std::size_t meshId;
     };
 
 public:
@@ -145,13 +146,11 @@ private:
     Camera camera;
     FreeCameraController cameraController;
 
-    Scene scene;
-    Scene yaeScene;
-
     std::vector<std::unique_ptr<Entity>> entities;
     Entity& makeNewEntity();
     Entity& findEntityByName(std::string_view name) const;
 
+    Scene loadScene(const std::filesystem::path& path);
     void createEntitiesFromScene(const Scene& scene);
     EntityId createEntitiesFromNode(
         const Scene& scene,
@@ -173,4 +172,5 @@ private:
     float displayFPSDelay{1.f};
 
     MaterialCache materialCache;
+    MeshCache meshCache;
 };

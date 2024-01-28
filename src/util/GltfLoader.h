@@ -11,6 +11,7 @@ struct Model;
 struct Scene;
 
 class MaterialCache;
+class MeshCache;
 
 namespace util
 {
@@ -23,6 +24,7 @@ struct LoadContext {
     const wgpu::Texture& whiteTexture;
 
     MaterialCache& materialCache;
+    MeshCache& meshCache;
 };
 
 class SceneLoader {

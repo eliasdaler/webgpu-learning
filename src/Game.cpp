@@ -391,30 +391,14 @@ void Game::init()
     createMeshDrawingPipeline();
     initSceneData();
 
-    util::LoadContext loadContext{
-        .device = device,
-        .queue = queue,
-        .materialLayout = materialGroupLayout,
-        .defaultSampler = nearestSampler,
-        .whiteTexture = whiteTexture,
-        .materialCache = materialCache,
-    };
-
-    {
-        util::SceneLoader loader;
-        loader.loadScene(loadContext, yaeScene, "assets/models/yae.gltf");
-    }
+    const auto yaeScene = loadScene("assets/models/yae.gltf");
     createEntitiesFromScene(yaeScene);
+    const auto cityScene = loadScene("assets/levels/city/city.gltf");
+    createEntitiesFromScene(cityScene);
 
     const glm::vec3 yaePos{1.4f, 0.f, 0.f};
     auto& yae = findEntityByName("yae_mer");
     yae.transform.position = yaePos;
-
-    {
-        util::SceneLoader loader;
-        loader.loadScene(loadContext, scene, "assets/levels/city/city.gltf");
-    }
-    createEntitiesFromScene(scene);
 
     createSpriteDrawingPipeline();
     createSprite();
@@ -697,6 +681,24 @@ void Game::createMeshDrawingPipeline()
     }
 }
 
+Scene Game::loadScene(const std::filesystem::path& path)
+{
+    util::LoadContext loadContext{
+        .device = device,
+        .queue = queue,
+        .materialLayout = materialGroupLayout,
+        .defaultSampler = nearestSampler,
+        .whiteTexture = whiteTexture,
+        .materialCache = materialCache,
+        .meshCache = meshCache,
+    };
+
+    Scene scene;
+    util::SceneLoader loader;
+    loader.loadScene(loadContext, scene, path);
+    return scene;
+}
+
 void Game::createEntitiesFromScene(const Scene& scene)
 {
     for (const auto& nodePtr : scene.nodes) {
@@ -726,8 +728,7 @@ Game::EntityId Game::createEntitiesFromNode(
     }
 
     { // mesh
-        e.scene = &scene;
-        e.meshIdx = node.meshIndex;
+        e.meshes = scene.meshes[node.meshIndex].primitives;
 
         const auto bufferDesc = wgpu::BufferDescriptor{
             .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
@@ -1226,7 +1227,7 @@ void Game::render()
             renderPass.SetBindGroup(0, perFrameBindGroup, 0);
 
             auto prevMaterialIdx = NULL_MATERIAL_ID;
-            std::size_t prevIndexBufferId = 0;
+            auto prevMeshId = NULL_MESH_ID;
 
             for (const auto& dcIdx : sortedDrawCommands) {
                 const auto& dc = drawCommands[dcIdx];
@@ -1239,8 +1240,8 @@ void Game::render()
 
                 renderPass.SetBindGroup(2, dc.meshBindGroup, 0);
 
-                if (dc.indexBufferId != prevIndexBufferId) {
-                    prevIndexBufferId = dc.indexBufferId;
+                if (dc.meshId != prevMeshId) {
+                    prevMeshId = dc.meshId;
                     renderPass.SetVertexBuffer(0, dc.mesh.vertexBuffer, 0, wgpu::kWholeSize);
                     renderPass.SetIndexBuffer(
                         dc.mesh.indexBuffer, wgpu::IndexFormat::Uint16, 0, wgpu::kWholeSize);
@@ -1295,18 +1296,16 @@ void Game::generateDrawList()
     for (const auto& ePtr : entities) {
         const auto& e = *ePtr;
 
-        assert(e.scene);
-        const auto& mesh = e.scene->meshes[e.meshIdx];
-
-        for (const auto& primitive : mesh.primitives) {
+        for (const auto& meshId : e.meshes) {
+            const auto& mesh = meshCache.getMesh(meshId);
             // TODO: draw frustum culling here
-            const auto& material = materialCache.getMaterial(primitive.materialId);
+            const auto& material = materialCache.getMaterial(mesh.materialId);
             drawCommands.push_back(DrawCommand{
-                .mesh = primitive,
+                .mesh = mesh,
                 .meshBindGroup = e.meshBindGroup,
-                .materialIdx = primitive.materialId,
+                .materialIdx = mesh.materialId,
                 // TODO: better id for index buffers/meshes (when there's a global mesh cache)
-                .indexBufferId = reinterpret_cast<std::size_t>(primitive.indexBuffer.Get()),
+                .meshId = meshId,
             });
         }
     }
@@ -1327,7 +1326,7 @@ void Game::sortDrawList()
             const auto& dc1 = drawCommands[i1];
             const auto& dc2 = drawCommands[i2];
             if (dc1.materialIdx == dc2.materialIdx) {
-                return dc1.indexBufferId < dc2.indexBufferId;
+                return dc1.meshId < dc2.meshId;
             }
             return dc1.materialIdx < dc2.materialIdx;
         });

@@ -13,6 +13,7 @@ add_executable(game
 
   FreeCameraController.cpp
   MaterialCache.cpp
+  MeshCache.cpp
 
   Game.cpp
   main.cpp

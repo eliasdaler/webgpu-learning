@@ -10,6 +10,7 @@
 #include <util/WebGPUUtil.h>
 
 #include <MaterialCache.h>
+#include <MeshCache.h>
 
 #define TINYGLTF_IMPLEMENTATION
 #define TINYGLTF_NO_STB_IMAGE
@@ -414,15 +415,20 @@ void SceneLoader::loadScene(const LoadContext& ctx, Scene& scene, const std::fil
         for (std::size_t primitiveIdx = 0; primitiveIdx < gltfMesh.primitives.size();
              ++primitiveIdx) {
             const auto& gltfPrimitive = gltfMesh.primitives[primitiveIdx];
-            auto& primitive = mesh.primitives[primitiveIdx];
-            if (gltfPrimitive.material != -1) {
-                primitive.materialId = materialMapping.at(gltfPrimitive.material);
-            }
 
+            // load on CPU
             Mesh cpuMesh;
             loadPrimitive(gltfModel, gltfMesh.name, gltfPrimitive, cpuMesh);
 
-            loadGPUMesh(ctx, cpuMesh, primitive);
+            // load to GPU
+            GPUMesh gpuMesh;
+            if (gltfPrimitive.material != -1) {
+                gpuMesh.materialId = materialMapping.at(gltfPrimitive.material);
+            }
+            loadGPUMesh(ctx, cpuMesh, gpuMesh);
+
+            const auto meshId = ctx.meshCache.addMesh(std::move(gpuMesh));
+            mesh.primitives[primitiveIdx] = meshId;
         }
     }
 

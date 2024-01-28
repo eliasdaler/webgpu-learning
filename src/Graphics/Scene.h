@@ -17,11 +17,10 @@ struct SceneNode {
 };
 
 struct SceneMesh {
-    std::vector<GPUMesh> primitives;
+    std::vector<MeshId> primitives;
 };
 
 struct Scene {
     std::vector<SceneMesh> meshes;
-
     std::vector<std::unique_ptr<SceneNode>> nodes;
 };
