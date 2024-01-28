@@ -291,8 +291,20 @@ void Game::init()
     surface = std::make_unique<wgpu::Surface>(util::CreateSurfaceForSDLWindow(instance, window));
 
     // better debugging
-    std::array<const char*, 3> enabledToggles{
-        "dump_shaders", "disable_symbol_renaming", "enable_immediate_error_handling"};
+    std::vector<const char*> enabledToggles{
+        "disable_symbol_renaming",
+        "use_user_defined_labels_in_backend",
+        "dump_shaders",
+        "enable_immediate_error_handling",
+    };
+
+    // change to false if something is broken
+    // but otherwise, it improves debug performance 2x
+    static const bool unsafeMode = true;
+    if (unsafeMode) {
+        enabledToggles.push_back("skip_validation");
+    }
+
     wgpu::DawnTogglesDescriptor deviceTogglesDesc;
     deviceTogglesDesc.enabledToggles = enabledToggles.data();
     deviceTogglesDesc.enabledToggleCount = enabledToggles.size();
@@ -385,17 +397,23 @@ void Game::init()
         .materialLayout = materialGroupLayout,
         .defaultSampler = nearestSampler,
         .whiteTexture = whiteTexture,
+        .materialCache = materialCache,
     };
 
-    util::loadScene(loadContext, yaeScene, "assets/models/yae.gltf");
+    {
+        util::SceneLoader loader;
+        loader.loadScene(loadContext, yaeScene, "assets/models/yae.gltf");
+    }
     createEntitiesFromScene(yaeScene);
 
     const glm::vec3 yaePos{1.4f, 0.f, 0.f};
     auto& yae = findEntityByName("yae_mer");
     yae.transform.position = yaePos;
 
-    // util::loadScene(loadContext, scene, "assets/levels/house/house.gltf");
-    util::loadScene(loadContext, scene, "assets/levels/city/city.gltf");
+    {
+        util::SceneLoader loader;
+        loader.loadScene(loadContext, scene, "assets/levels/city/city.gltf");
+    }
     createEntitiesFromScene(scene);
 
     createSpriteDrawingPipeline();
@@ -1207,7 +1225,6 @@ void Game::render()
             renderPass.SetPipeline(meshPipeline);
             renderPass.SetBindGroup(0, perFrameBindGroup, 0);
 
-            static const auto NULL_MATERIAL_ID = std::numeric_limits<std::size_t>::max();
             auto prevMaterialIdx = NULL_MATERIAL_ID;
             std::size_t prevIndexBufferId = 0;
 
@@ -1216,7 +1233,8 @@ void Game::render()
 
                 if (dc.materialIdx != prevMaterialIdx) {
                     prevMaterialIdx = dc.materialIdx;
-                    renderPass.SetBindGroup(1, dc.material.bindGroup, 0);
+                    const auto& material = materialCache.getMaterial(dc.materialIdx);
+                    renderPass.SetBindGroup(1, material.bindGroup, 0);
                 }
 
                 renderPass.SetBindGroup(2, dc.meshBindGroup, 0);
@@ -1277,23 +1295,18 @@ void Game::generateDrawList()
     for (const auto& ePtr : entities) {
         const auto& e = *ePtr;
 
-        if (e.tag == "yae_mer") { // temp hack
-            continue;
-        }
-
         assert(e.scene);
         const auto& mesh = e.scene->meshes[e.meshIdx];
 
         for (const auto& primitive : mesh.primitives) {
             // TODO: draw frustum culling here
-            const auto& material = e.scene->materials[primitive.materialIndex];
+            const auto& material = materialCache.getMaterial(primitive.materialId);
             drawCommands.push_back(DrawCommand{
-                .mesh = primitive.mesh,
+                .mesh = primitive,
                 .meshBindGroup = e.meshBindGroup,
-                .material = material,
-                .materialIdx = primitive.materialIndex,
+                .materialIdx = primitive.materialId,
                 // TODO: better id for index buffers/meshes (when there's a global mesh cache)
-                .indexBufferId = reinterpret_cast<std::size_t>(primitive.mesh.indexBuffer.Get()),
+                .indexBufferId = reinterpret_cast<std::size_t>(primitive.indexBuffer.Get()),
             });
         }
     }

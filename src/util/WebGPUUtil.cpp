@@ -127,7 +127,7 @@ wgpu::Texture loadTexture(
     const char* label)
 {
     const auto textureDesc = wgpu::TextureDescriptor{
-        .label = label, // sadly these labels don't show up in RenderDoc
+        .label = label,
         .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
         .dimension = wgpu::TextureDimension::e2D,
         .size =

@@ -7,11 +7,6 @@
 #include <Graphics/Material.h>
 #include <Math/Transform.h>
 
-struct MeshPrimitive {
-    GPUMesh mesh;
-    std::size_t materialIndex;
-};
-
 struct SceneNode {
     std::string name;
     Transform transform;
@@ -22,12 +17,11 @@ struct SceneNode {
 };
 
 struct SceneMesh {
-    std::vector<MeshPrimitive> primitives;
+    std::vector<GPUMesh> primitives;
 };
 
 struct Scene {
     std::vector<SceneMesh> meshes;
-    std::vector<Material> materials;
 
     std::vector<std::unique_ptr<SceneNode>> nodes;
 };

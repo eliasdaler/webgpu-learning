@@ -12,6 +12,8 @@ add_executable(game
   util/WebGPUUtil.cpp
 
   FreeCameraController.cpp
+  MaterialCache.cpp
+
   Game.cpp
   main.cpp
 )

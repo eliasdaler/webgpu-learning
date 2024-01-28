@@ -7,7 +7,9 @@
 #include <Graphics/GPUMesh.h>
 #include <Graphics/Scene.h>
 
-#include "WebGPUUtil.h"
+#include <util/WebGPUUtil.h>
+
+#include <MaterialCache.h>
 
 #define TINYGLTF_IMPLEMENTATION
 #define TINYGLTF_NO_STB_IMAGE
@@ -371,7 +373,7 @@ void loadNode(SceneNode& node, const tinygltf::Node& gltfNode, const tinygltf::M
 
 namespace util
 {
-void loadScene(const LoadContext& ctx, Scene& scene, const std::filesystem::path& path)
+void SceneLoader::loadScene(const LoadContext& ctx, Scene& scene, const std::filesystem::path& path)
 {
     const auto& device = ctx.device;
     const auto& queue = ctx.queue;
@@ -386,12 +388,12 @@ void loadScene(const LoadContext& ctx, Scene& scene, const std::filesystem::path
     const auto& gltfScene = gltfModel.scenes[gltfModel.defaultScene];
 
     // load materials
-    scene.materials.resize(gltfModel.materials.size());
     for (std::size_t materialIdx = 0; materialIdx < gltfModel.materials.size(); ++materialIdx) {
         const auto& gltfMaterial = gltfModel.materials[materialIdx];
-        auto& material = scene.materials[materialIdx];
-        material.name = gltfMaterial.name;
-        material.baseColor = getDiffuseColor(gltfMaterial);
+        Material material{
+            .name = gltfMaterial.name,
+            .baseColor = getDiffuseColor(gltfMaterial),
+        };
 
         std::filesystem::path diffusePath;
         if (hasDiffuseTexture(gltfMaterial)) {
@@ -399,6 +401,8 @@ void loadScene(const LoadContext& ctx, Scene& scene, const std::filesystem::path
         }
 
         loadMaterial(ctx, material, diffusePath);
+        auto materialId = ctx.materialCache.addMaterial(std::move(material));
+        materialMapping.emplace(materialIdx, materialId);
     }
 
     // load meshes
@@ -411,13 +415,14 @@ void loadScene(const LoadContext& ctx, Scene& scene, const std::filesystem::path
              ++primitiveIdx) {
             const auto& gltfPrimitive = gltfMesh.primitives[primitiveIdx];
             auto& primitive = mesh.primitives[primitiveIdx];
-            // TODO: handle case when primitive doesn't have a material
-            primitive.materialIndex = static_cast<std::size_t>(gltfPrimitive.material);
+            if (gltfPrimitive.material != -1) {
+                primitive.materialId = materialMapping.at(gltfPrimitive.material);
+            }
 
             Mesh cpuMesh;
             loadPrimitive(gltfModel, gltfMesh.name, gltfPrimitive, cpuMesh);
 
-            loadGPUMesh(ctx, cpuMesh, primitive.mesh);
+            loadGPUMesh(ctx, cpuMesh, primitive);
         }
     }
 

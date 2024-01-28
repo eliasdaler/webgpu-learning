@@ -11,6 +11,7 @@
 #include <Graphics/Scene.h>
 
 #include "FreeCameraController.h"
+#include "MaterialCache.h"
 
 struct SDL_Window;
 
@@ -52,9 +53,8 @@ public:
     struct DrawCommand {
         const GPUMesh& mesh;
         wgpu::BindGroup meshBindGroup;
-        const Material& material;
 
-        std::size_t materialIdx;
+        MaterialId materialIdx;
         std::size_t indexBufferId;
     };
 
@@ -171,4 +171,6 @@ private:
     // only display update FPS every 1 seconds, otherwise it's too noisy
     float displayedFPS{0.f};
     float displayFPSDelay{1.f};
+
+    MaterialCache materialCache;
 };
