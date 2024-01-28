@@ -53,6 +53,9 @@ public:
         const GPUMesh& mesh;
         wgpu::BindGroup meshBindGroup;
         const Material& material;
+
+        std::size_t materialIdx;
+        std::size_t indexBufferId;
     };
 
 public:
@@ -81,6 +84,7 @@ private:
     void updateEntityTransforms(Entity& e, const glm::mat4& parentWorldTransform);
 
     void generateDrawList();
+    void sortDrawList();
 
     bool isRunning{false};
 
@@ -155,6 +159,7 @@ private:
         EntityId parentId = NULL_ENTITY_ID);
 
     std::vector<DrawCommand> drawCommands;
+    std::vector<std::size_t> sortedDrawCommands;
 
     wgpu::Texture whiteTexture;
 

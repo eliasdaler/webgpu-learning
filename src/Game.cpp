@@ -15,6 +15,7 @@
 #include <cassert>
 #include <filesystem>
 #include <iostream>
+#include <numeric> // iota
 #include <vector>
 
 #include <backends/imgui_impl_sdl2.h>
@@ -1206,27 +1207,28 @@ void Game::render()
             renderPass.SetPipeline(meshPipeline);
             renderPass.SetBindGroup(0, perFrameBindGroup, 0);
 
-            // TODO: sort by material?
-            for (const auto& dc : drawCommands) {
-                {
-                    ZoneScopedN("Set material bind group");
+            static const auto NULL_MATERIAL_ID = std::numeric_limits<std::size_t>::max();
+            auto prevMaterialIdx = NULL_MATERIAL_ID;
+            std::size_t prevIndexBufferId = 0;
+
+            for (const auto& dcIdx : sortedDrawCommands) {
+                const auto& dc = drawCommands[dcIdx];
+
+                if (dc.materialIdx != prevMaterialIdx) {
+                    prevMaterialIdx = dc.materialIdx;
                     renderPass.SetBindGroup(1, dc.material.bindGroup, 0);
                 }
-                {
-                    ZoneScopedN("Set mesh bind group");
-                    renderPass.SetBindGroup(2, dc.meshBindGroup, 0);
-                }
 
-                {
-                    ZoneScopedN("Set buffers");
+                renderPass.SetBindGroup(2, dc.meshBindGroup, 0);
+
+                if (dc.indexBufferId != prevIndexBufferId) {
+                    prevIndexBufferId = dc.indexBufferId;
                     renderPass.SetVertexBuffer(0, dc.mesh.vertexBuffer, 0, wgpu::kWholeSize);
                     renderPass.SetIndexBuffer(
                         dc.mesh.indexBuffer, wgpu::IndexFormat::Uint16, 0, wgpu::kWholeSize);
                 }
-                {
-                    ZoneScopedN("Draw indexed");
-                    renderPass.DrawIndexed(dc.mesh.indexBufferSize, 1, 0, 0, 0);
-                }
+
+                renderPass.DrawIndexed(dc.mesh.indexBufferSize, 1, 0, 0, 0);
             }
 
             renderPass.PopDebugGroup();
@@ -1274,8 +1276,14 @@ void Game::generateDrawList()
 
     for (const auto& ePtr : entities) {
         const auto& e = *ePtr;
+
+        if (e.tag == "yae_mer") { // temp hack
+            continue;
+        }
+
         assert(e.scene);
         const auto& mesh = e.scene->meshes[e.meshIdx];
+
         for (const auto& primitive : mesh.primitives) {
             // TODO: draw frustum culling here
             const auto& material = e.scene->materials[primitive.materialIndex];
@@ -1283,9 +1291,33 @@ void Game::generateDrawList()
                 .mesh = primitive.mesh,
                 .meshBindGroup = e.meshBindGroup,
                 .material = material,
+                .materialIdx = primitive.materialIndex,
+                // TODO: better id for index buffers/meshes (when there's a global mesh cache)
+                .indexBufferId = reinterpret_cast<std::size_t>(primitive.mesh.indexBuffer.Get()),
             });
         }
     }
+
+    sortDrawList();
+}
+
+void Game::sortDrawList()
+{
+    sortedDrawCommands.clear();
+    sortedDrawCommands.resize(drawCommands.size());
+    std::iota(sortedDrawCommands.begin(), sortedDrawCommands.end(), 0);
+
+    std::sort(
+        sortedDrawCommands.begin(),
+        sortedDrawCommands.end(),
+        [this](const auto& i1, const auto& i2) {
+            const auto& dc1 = drawCommands[i1];
+            const auto& dc2 = drawCommands[i2];
+            if (dc1.materialIdx == dc2.materialIdx) {
+                return dc1.indexBufferId < dc2.indexBufferId;
+            }
+            return dc1.materialIdx < dc2.materialIdx;
+        });
 }
 
 void Game::quit()
