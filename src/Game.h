@@ -60,6 +60,7 @@ public:
 
 private:
     void init();
+    void initSwapChain(bool vSync);
     void initCamera();
     void initSceneData();
     void createMeshDrawingPipeline();
@@ -156,4 +157,13 @@ private:
     std::vector<DrawCommand> drawCommands;
 
     wgpu::Texture whiteTexture;
+
+    bool vSync{true};
+    bool frameLimit{true};
+    float frameTime{0.f};
+    float avgFPS{0.f};
+
+    // only display update FPS every 1 seconds, otherwise it's too noisy
+    float displayedFPS{0.f};
+    float displayFPSDelay{1.f};
 };

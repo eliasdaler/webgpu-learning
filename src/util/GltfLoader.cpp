@@ -304,6 +304,7 @@ void loadGPUMesh(const util::LoadContext ctx, const Mesh& cpuMesh, GPUMesh& gpuM
 
         gpuMesh.indexBuffer = ctx.device.CreateBuffer(&bufferDesc);
         ctx.queue.WriteBuffer(gpuMesh.indexBuffer, 0, cpuMesh.indices.data(), bufferDesc.size);
+        gpuMesh.indexBufferSize = cpuMesh.indices.size();
     }
 }
 

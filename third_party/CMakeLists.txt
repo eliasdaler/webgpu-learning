@@ -90,3 +90,8 @@ endif()
 add_library(imgui::imgui ALIAS imgui_sdl)
 
 target_link_libraries(imgui_sdl PRIVATE webgpu_dawn)
+
+## tracy
+option(TRACY_ENABLE "" ON)
+option(TRACY_ON_DEMAND "" ON)
+add_subdirectory(tracy)

@@ -5,4 +5,5 @@
 struct GPUMesh {
     wgpu::Buffer vertexBuffer;
     wgpu::Buffer indexBuffer;
+    std::size_t indexBufferSize{0};
 };

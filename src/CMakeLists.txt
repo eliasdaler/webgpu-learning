@@ -88,3 +88,7 @@ target_compile_definitions(game
     GLM_FORCE_EXPLICIT_CTOR
     GLM_FORCE_DEPTH_ZERO_TO_ONE
 )
+
+target_link_libraries(game PUBLIC Tracy::TracyClient)
+target_compile_definitions(game PRIVATE $<$<CONFIG:Debug,RelWithDebInfo>:TRACY_ENABLE>)
+

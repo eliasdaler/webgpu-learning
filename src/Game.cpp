@@ -20,6 +20,22 @@
 #include <backends/imgui_impl_sdl2.h>
 #include <backends/imgui_impl_wgpu.h>
 
+#include <tracy/Tracy.hpp>
+
+#ifdef TRACY_ENABLE
+void* operator new(std ::size_t count)
+{
+    auto ptr = malloc(count);
+    TracyAlloc(ptr, count);
+    return ptr;
+}
+void operator delete(void* ptr) noexcept
+{
+    TracyFree(ptr);
+    free(ptr);
+}
+#endif
+
 namespace
 {
 void defaultValidationErrorHandler(WGPUErrorType type, char const* message, void* userdata)
@@ -313,19 +329,7 @@ void Game::init()
     };
     queue.OnSubmittedWorkDone(onQueueWorkDone, nullptr);
 
-    swapChainFormat = wgpu::TextureFormat::BGRA8Unorm;
-    { // init swapchain
-        const auto swapChainDesc = wgpu::SwapChainDescriptor{
-            .usage = wgpu::TextureUsage::RenderAttachment,
-            .format = swapChainFormat,
-            .width = static_cast<std::uint32_t>(params.screenWidth),
-            .height = static_cast<std::uint32_t>(params.screenHeight),
-            .presentMode = wgpu::PresentMode::Fifo,
-        };
-
-        swapChain =
-            std::make_unique<wgpu::SwapChain>(device.CreateSwapChain(*surface, &swapChainDesc));
-    }
+    initSwapChain(vSync);
 
     { // create depth dexture
         const auto textureDesc = wgpu::TextureDescriptor{
@@ -397,6 +401,23 @@ void Game::init()
     createSprite();
 
     initImGui();
+}
+
+void Game::initSwapChain(bool vSync)
+{
+    swapChainFormat = wgpu::TextureFormat::BGRA8Unorm;
+    { // init swapchain
+        const auto swapChainDesc = wgpu::SwapChainDescriptor{
+            .usage = wgpu::TextureUsage::RenderAttachment,
+            .format = swapChainFormat,
+            .width = static_cast<std::uint32_t>(params.screenWidth),
+            .height = static_cast<std::uint32_t>(params.screenHeight),
+            .presentMode = vSync ? wgpu::PresentMode::Fifo : wgpu::PresentMode::Immediate,
+        };
+
+        swapChain =
+            std::make_unique<wgpu::SwapChain>(device.CreateSwapChain(*surface, &swapChainDesc));
+    }
 }
 
 void Game::initSceneData()
@@ -959,21 +980,28 @@ void Game::loop()
     const float FPS = 60.f;
     const float dt = 1.f / FPS;
 
-    uint32_t prev_time = SDL_GetTicks();
+    auto prevTime = std::chrono::high_resolution_clock::now();
     float accumulator = dt; // so that we get at least 1 update before render
 
     isRunning = true;
     while (isRunning) {
-        uint32_t new_time = SDL_GetTicks();
-        const auto frame_time = (new_time - prev_time) / 1000.f;
-        accumulator += frame_time;
-        prev_time = new_time;
+        const auto newTime = std::chrono::high_resolution_clock::now();
+        frameTime = std::chrono::duration<float>(newTime - prevTime).count();
+
+        accumulator += frameTime;
+        prevTime = newTime;
+
+        // moving average
+        float newFPS = 1.f / frameTime;
+        avgFPS = std::lerp(avgFPS, newFPS, 0.1f);
 
         if (accumulator > 10 * dt) { // game stopped for debug
             accumulator = dt;
         }
 
         while (accumulator >= dt) {
+            ZoneScopedN("Tick");
+
             { // event processing
                 SDL_Event event;
                 while (SDL_PollEvent(&event)) {
@@ -1000,12 +1028,16 @@ void Game::loop()
         // Needed to report uncaptured errors.
         // TODO: figure out how to properly use instance.ProcessEvents()
         device.Tick();
+
         render();
 
-        // Delay to not overload the CPU
-        const auto frameTime = (SDL_GetTicks() - prev_time) / 1000.f;
-        if (dt > frameTime) {
-            SDL_Delay(dt - frameTime);
+        if (frameLimit) {
+            // Delay to not overload the CPU
+            const auto now = std::chrono::high_resolution_clock::now();
+            const auto frameTime = std::chrono::duration<float>(now - prevTime).count();
+            if (dt > frameTime) {
+                SDL_Delay(dt - frameTime);
+            }
         }
     }
 }
@@ -1017,6 +1049,8 @@ void Game::handleInput(float dt)
 
 void Game::update(float dt)
 {
+    ZoneScopedN("Update");
+
     cameraController.update(camera, dt);
 
     { // per frame data
@@ -1065,8 +1099,22 @@ void Game::updateEntityTransforms(Entity& e, const glm::mat4& parentWorldTransfo
 
 void Game::updateDevTools(float dt)
 {
+    if (displayFPSDelay > 0.f) {
+        displayFPSDelay -= dt;
+    } else {
+        displayFPSDelay = 1.f;
+        displayedFPS = avgFPS;
+    }
+
     ImGui::Begin("WebGPU Dear ImGui");
     {
+        // ImGui::Text("Frame time: %.1f ms", frameTime * 1000.f);
+        ImGui::Text("FPS: %d", (int)displayedFPS);
+        if (ImGui::Checkbox("VSync", &vSync)) {
+            initSwapChain(vSync);
+        }
+        ImGui::Checkbox("Frame limit", &frameLimit);
+
         const auto cameraPos = camera.getPosition();
         ImGui::Text("Camera pos: %.2f, %.2f, %.2f", cameraPos.x, cameraPos.y, cameraPos.z);
         const auto yaw = cameraController.getYaw();
@@ -1081,6 +1129,8 @@ void Game::updateDevTools(float dt)
 void Game::render()
 {
     generateDrawList();
+
+    ZoneScopedN("Draw");
 
     // cornflower blue <3
     static const wgpu::Color clearColor{100.f / 255.f, 149.f / 255.f, 237.f / 255.f, 255.f / 255.f};
@@ -1147,26 +1197,41 @@ void Game::render()
             .depthStencilAttachment = &depthStencilAttachment,
         };
 
-        const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
-        renderPass.PushDebugGroup("Draw meshes");
+        {
+            ZoneScopedN("Mesh draw render pass");
 
-        renderPass.SetPipeline(meshPipeline);
-        renderPass.SetBindGroup(0, perFrameBindGroup, 0);
+            const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
+            renderPass.PushDebugGroup("Draw meshes");
 
-        // TODO: sort by material?
-        for (const auto& dc : drawCommands) {
-            renderPass.SetBindGroup(1, dc.material.bindGroup, 0);
-            renderPass.SetBindGroup(2, dc.meshBindGroup, 0);
+            renderPass.SetPipeline(meshPipeline);
+            renderPass.SetBindGroup(0, perFrameBindGroup, 0);
 
-            renderPass.SetVertexBuffer(0, dc.mesh.vertexBuffer, 0, wgpu::kWholeSize);
-            renderPass.SetIndexBuffer(
-                dc.mesh.indexBuffer, wgpu::IndexFormat::Uint16, 0, wgpu::kWholeSize);
-            renderPass
-                .DrawIndexed(dc.mesh.indexBuffer.GetSize() / sizeof(std::uint16_t), 1, 0, 0, 0);
+            // TODO: sort by material?
+            for (const auto& dc : drawCommands) {
+                {
+                    ZoneScopedN("Set material bind group");
+                    renderPass.SetBindGroup(1, dc.material.bindGroup, 0);
+                }
+                {
+                    ZoneScopedN("Set mesh bind group");
+                    renderPass.SetBindGroup(2, dc.meshBindGroup, 0);
+                }
+
+                {
+                    ZoneScopedN("Set buffers");
+                    renderPass.SetVertexBuffer(0, dc.mesh.vertexBuffer, 0, wgpu::kWholeSize);
+                    renderPass.SetIndexBuffer(
+                        dc.mesh.indexBuffer, wgpu::IndexFormat::Uint16, 0, wgpu::kWholeSize);
+                }
+                {
+                    ZoneScopedN("Draw indexed");
+                    renderPass.DrawIndexed(dc.mesh.indexBufferSize, 1, 0, 0, 0);
+                }
+            }
+
+            renderPass.PopDebugGroup();
+            renderPass.End();
         }
-
-        renderPass.PopDebugGroup();
-        renderPass.End();
     }
 
     { // Dear ImGui
@@ -1197,10 +1262,14 @@ void Game::render()
 
     // flush
     swapChain->Present();
+
+    FrameMark;
 }
 
 void Game::generateDrawList()
 {
+    ZoneScopedN("Generate draw list");
+
     drawCommands.clear();
 
     for (const auto& ePtr : entities) {
