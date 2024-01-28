@@ -391,8 +391,12 @@ void Game::init()
     createMeshDrawingPipeline();
     initSceneData();
 
+    const auto catoScene = loadScene("assets/models/cato.gltf");
+    createEntitiesFromScene(catoScene);
+
     const auto yaeScene = loadScene("assets/models/yae.gltf");
     createEntitiesFromScene(yaeScene);
+
     const auto cityScene = loadScene("assets/levels/city/city.gltf");
     createEntitiesFromScene(cityScene);
 

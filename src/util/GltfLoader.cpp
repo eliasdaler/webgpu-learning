@@ -6,6 +6,7 @@
 
 #include <Graphics/GPUMesh.h>
 #include <Graphics/Scene.h>
+#include <Graphics/Skeleton.h>
 
 #include <util/WebGPUUtil.h>
 
@@ -370,6 +371,34 @@ void loadNode(SceneNode& node, const tinygltf::Node& gltfNode, const tinygltf::M
     }
 }
 
+Skeleton loadSkeleton(const tinygltf::Model& model, const tinygltf::Skin& skin)
+{
+    // load inverse bind matrices
+    const auto& ibAccessor = model.accessors[skin.inverseBindMatrices];
+    const auto ibs = getPackedBufferSpan<glm::mat4>(model, ibAccessor);
+    std::vector<glm::mat4> ibMatrices(ibAccessor.count);
+    ibMatrices.assign(ibs.begin(), ibs.end());
+
+    Skeleton skeleton;
+    skeleton.joints.reserve(skin.joints.size());
+
+    JointId jointId = 0;
+    for (const auto& nodeIdx : skin.joints) {
+        const auto& jointNode = model.nodes[jointId];
+
+        Joint j;
+        j.id = jointId;
+        j.inverseBindMatrix = ibMatrices[jointId];
+        skeleton.jointNames.emplace(jointId, jointNode.name);
+
+        skeleton.joints.push_back(std::move(j));
+
+        ++jointId;
+    }
+
+    return skeleton;
+}
+
 }
 
 namespace util
@@ -407,10 +436,9 @@ void SceneLoader::loadScene(const LoadContext& ctx, Scene& scene, const std::fil
     }
 
     // load meshes
-    scene.meshes.resize(gltfModel.meshes.size());
-    for (std::size_t meshIdx = 0; meshIdx < gltfModel.meshes.size(); ++meshIdx) {
-        const auto& gltfMesh = gltfModel.meshes[meshIdx];
-        auto& mesh = scene.meshes[meshIdx];
+    scene.meshes.reserve(gltfModel.meshes.size());
+    for (const auto& gltfMesh : gltfModel.meshes) {
+        SceneMesh mesh;
         mesh.primitives.resize(gltfMesh.primitives.size());
         for (std::size_t primitiveIdx = 0; primitiveIdx < gltfMesh.primitives.size();
              ++primitiveIdx) {
@@ -430,6 +458,12 @@ void SceneLoader::loadScene(const LoadContext& ctx, Scene& scene, const std::fil
             const auto meshId = ctx.meshCache.addMesh(std::move(gpuMesh));
             mesh.primitives[primitiveIdx] = meshId;
         }
+        scene.meshes.push_back(std::move(mesh));
+    }
+
+    scene.skeletons.reserve(gltfModel.skins.size());
+    for (const auto& skin : gltfModel.skins) {
+        scene.skeletons.push_back(loadSkeleton(gltfModel, skin));
     }
 
     // load nodes

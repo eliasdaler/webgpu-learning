@@ -5,6 +5,7 @@
 
 #include <Graphics/GPUMesh.h>
 #include <Graphics/Material.h>
+#include <Graphics/Skeleton.h>
 #include <Math/Transform.h>
 
 struct SceneNode {
@@ -23,4 +24,5 @@ struct SceneMesh {
 struct Scene {
     std::vector<SceneMesh> meshes;
     std::vector<std::unique_ptr<SceneNode>> nodes;
+    std::vector<Skeleton> skeletons;
 };

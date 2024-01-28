@@ -29,7 +29,6 @@ public:
     };
 
     static const std::size_t NULL_ENTITY_ID = std::numeric_limits<std::size_t>::max();
-    static const std::size_t NULL_MESH_ID = std::numeric_limits<std::size_t>::max();
 
     using EntityId = std::size_t;
 
