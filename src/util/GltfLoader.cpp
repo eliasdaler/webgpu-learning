@@ -381,8 +381,11 @@ void loadNode(SceneNode& node, const tinygltf::Node& gltfNode, const tinygltf::M
 {
     node.name = gltfNode.name;
     node.transform = loadTransform(gltfNode);
+
     assert(gltfNode.mesh != -1);
     node.meshIndex = static_cast<std::size_t>(gltfNode.mesh);
+
+    node.skinId = gltfNode.skin;
 
     // load children
     node.children.resize(gltfNode.children.size());

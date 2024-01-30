@@ -2,6 +2,7 @@
 
 #include <util/GltfLoader.h>
 #include <util/ImageLoader.h>
+#include <util/InputUtil.h>
 #include <util/OSUtil.h>
 #include <util/SDLWebGPU.h>
 #include <util/WebGPUUtil.h>
@@ -105,12 +106,24 @@ struct MeshData {
 };
 
 @group(2) @binding(0) var<uniform> mesh: MeshData;
+@group(2) @binding(1) var<uniform> jointMatrices: array<mat4x4f, 256>;
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
 
-    let worldPos = mesh.model * vec4(in.position, 1.0);
+    var worldPos = vec4(0.0);
+    if (any(in.weights != vec4(0.0))) {
+        let skinMatrix =
+            in.weights.x * jointMatrices[in.jointIds.x] +
+            in.weights.y * jointMatrices[in.jointIds.y] +
+            in.weights.z * jointMatrices[in.jointIds.z] +
+            in.weights.w * jointMatrices[in.jointIds.w];
+        worldPos = mesh.model * skinMatrix * vec4(in.position, 1.0);
+    } else {
+        worldPos = mesh.model * vec4(in.position, 1.0);
+    }
+
     out.position = fd.viewProj * worldPos;
     out.pos = worldPos.xyz;
     out.uv = in.uv;
@@ -389,6 +402,20 @@ void Game::init()
     };
     nearestSampler = device.CreateSampler(&samplerDesc);
 
+    { // temp hack
+        std::array<glm::mat4, 256> matrices;
+        for (auto& m : matrices) {
+            m = glm::mat4{1.f};
+        }
+
+        const auto bufferDesc = wgpu::BufferDescriptor{
+            .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
+            .size = sizeof(matrices),
+        };
+        identityJointMatricesDataBuffer = device.CreateBuffer(&bufferDesc);
+        queue.WriteBuffer(identityJointMatricesDataBuffer, 0, matrices.data(), sizeof(matrices));
+    }
+
     initCamera();
 
     createMeshDrawingPipeline();
@@ -567,9 +594,17 @@ void Game::createMeshDrawingPipeline()
     }
 
     { // mesh data layout
-        const std::array<wgpu::BindGroupLayoutEntry, 1> bindGroupLayoutEntries{{
+        const std::array<wgpu::BindGroupLayoutEntry, 2> bindGroupLayoutEntries{{
             {
                 .binding = 0,
+                .visibility = wgpu::ShaderStage::Vertex,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::Uniform,
+                    },
+            },
+            {
+                .binding = 1,
                 .visibility = wgpu::ShaderStage::Vertex,
                 .buffer =
                     {
@@ -761,11 +796,33 @@ Game::EntityId Game::createEntitiesFromNode(
         };
         queue.WriteBuffer(e.meshDataBuffer, 0, &md, sizeof(MeshData));
 
+        auto dataBuffer = identityJointMatricesDataBuffer;
+        { // skeleton
+            if (node.skinId != -1) {
+                e.hasSkeleton = true;
+                e.skeleton = scene.skeletons[node.skinId];
+
+                const auto bufferDesc = wgpu::BufferDescriptor{
+                    .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
+                    .size = sizeof(glm::mat4) * 256,
+                };
+                e.jointMatricesDataBuffer = device.CreateBuffer(&bufferDesc);
+
+                e.uploadJointMatricesToGPU(queue);
+
+                dataBuffer = e.jointMatricesDataBuffer;
+            }
+        }
+
         { // mesh bind group
-            const std::array<wgpu::BindGroupEntry, 1> bindings{{
+            const std::array<wgpu::BindGroupEntry, 2> bindings{{
                 {
                     .binding = 0,
                     .buffer = e.meshDataBuffer,
+                },
+                {
+                    .binding = 1,
+                    .buffer = dataBuffer,
                 },
             }};
             const auto bindGroupDesc = wgpu::BindGroupDescriptor{
@@ -1101,9 +1158,40 @@ void Game::update(float dt)
         queue.WriteBuffer(frameDataBuffer, 0, &ud, sizeof(PerFrameData));
     }
 
+    { // move bones manually with O, P (until I make animations work)
+        auto& e = findEntityByName("Cato");
+        float offset = 0.f;
+        if (util::isKeyPressed(SDL_SCANCODE_O)) {
+            offset = 1.5f;
+        } else if (util::isKeyPressed(SDL_SCANCODE_P)) {
+            offset = -1.5f;
+        }
+
+        if (offset != 0.f) {
+            e.skeleton.joints[5].localTransform.heading =
+                glm::angleAxis(glm::radians(offset), glm::vec3{0.f, 0.f, 1.f}) *
+                e.skeleton.joints[5].localTransform.heading;
+            e.skeleton.joints[6].localTransform.heading =
+                glm::angleAxis(glm::radians(offset), glm::vec3{0.f, 0.f, 1.f}) *
+                e.skeleton.joints[6].localTransform.heading;
+
+            e.skeleton.updateTransforms();
+            e.uploadJointMatricesToGPU(queue);
+        }
+    }
+
     updateEntityTransforms();
 
     updateDevTools(dt);
+}
+
+void Game::Entity::uploadJointMatricesToGPU(const wgpu::Queue& queue) const
+{
+    queue.WriteBuffer(
+        jointMatricesDataBuffer,
+        0,
+        skeleton.jointMatrices.data(),
+        sizeof(glm::mat4) * skeleton.jointMatrices.size());
 }
 
 void Game::updateEntityTransforms()

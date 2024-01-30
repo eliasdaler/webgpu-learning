@@ -12,6 +12,7 @@ struct SceneNode {
     std::string name;
     Transform transform;
     std::size_t meshIndex;
+    int skinId{-1};
 
     SceneNode* parent{nullptr};
     std::vector<std::unique_ptr<SceneNode>> children;

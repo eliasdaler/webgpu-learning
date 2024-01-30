@@ -48,6 +48,12 @@ public:
         std::vector<MeshId> meshes;
         wgpu::Buffer meshDataBuffer;
         wgpu::BindGroup meshBindGroup;
+
+        Skeleton skeleton;
+        wgpu::Buffer jointMatricesDataBuffer;
+        bool hasSkeleton{false};
+
+        void uploadJointMatricesToGPU(const wgpu::Queue& queue) const;
     };
 
     struct DrawCommand {
@@ -172,4 +178,6 @@ private:
 
     MaterialCache materialCache;
     MeshCache meshCache;
+
+    wgpu::Buffer identityJointMatricesDataBuffer;
 };

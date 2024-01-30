@@ -16,21 +16,20 @@ struct Joint {
     JointId id{NULL_JOINT_ID};
     glm::mat4 inverseBindMatrix{1.f};
     Transform localTransform;
-    glm::mat4 globalJointTransform{1.f};
 };
 
 struct Skeleton {
-    void updateTransforms();
-
-    std::unordered_map<JointId, std::string> jointNames;
-    std::vector<Joint> joints;
-
     struct JointNode {
         std::vector<JointId> children;
     };
-    std::vector<JointNode> hierarchy;
 
+    void updateTransforms();
+
+    std::vector<Joint> joints;
+    std::vector<JointNode> hierarchy;
     std::vector<glm::mat4> jointMatrices;
+
+    std::unordered_map<JointId, std::string> jointNames;
 
 private:
     void updateTransforms(JointId id, const glm::mat4& parentWorldMatrix);
