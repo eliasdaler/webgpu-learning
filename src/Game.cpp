@@ -75,6 +75,9 @@ struct VertexInput {
     @location(1) uv: vec2f,
     @location(2) normal: vec3f,
     @location(3) tangent: vec4f,
+
+    @location(4) jointIds: vec4u,
+    @location(5) weights: vec4f,
 };
 
 struct VertexOutput {
@@ -612,7 +615,7 @@ void Game::createMeshDrawingPipeline()
         pipelineDesc.depthStencil = &depthStencilState;
 
         // vertex
-        const std::array<wgpu::VertexAttribute, 4> vertexAttribs{{
+        const std::array<wgpu::VertexAttribute, 6> vertexAttribs{{
             {
                 // position
                 .format = wgpu::VertexFormat::Float32x3,
@@ -636,6 +639,18 @@ void Game::createMeshDrawingPipeline()
                 .format = wgpu::VertexFormat::Float32x4,
                 .offset = offsetof(Mesh::Vertex, tangent),
                 .shaderLocation = 3,
+            },
+            {
+                // jointIds
+                .format = wgpu::VertexFormat::Uint32x4,
+                .offset = offsetof(Mesh::Vertex, jointIds),
+                .shaderLocation = 4,
+            },
+            {
+                // weights
+                .format = wgpu::VertexFormat::Float32x4,
+                .offset = offsetof(Mesh::Vertex, weights),
+                .shaderLocation = 5,
             },
         }};
 

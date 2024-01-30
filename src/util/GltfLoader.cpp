@@ -54,6 +54,8 @@ static const std::string GLTF_POSITIONS_ACCESSOR{"POSITION"};
 static const std::string GLTF_NORMALS_ACCESSOR{"NORMAL"};
 static const std::string GLTF_TANGENTS_ACCESSOR{"TANGENT"};
 static const std::string GLTF_UVS_ACCESSOR{"TEXCOORD_0"};
+static const std::string GLTF_JOINTS_ACCESSOR{"JOINTS_0"};
+static const std::string GLTF_WEIGHTS_ACCESSOR{"WEIGHTS_0"};
 
 static const std::string GLTF_SAMPLER_PATH_TRANSLATION{"translation"};
 static const std::string GLTF_SAMPLER_PATH_ROTATION{"rotation"};
@@ -196,6 +198,32 @@ void loadPrimitive(
         assert(uvs.size() == mesh.vertices.size());
         for (std::size_t i = 0; i < uvs.size(); ++i) {
             mesh.vertices[i].uv = uvs[i];
+        }
+    }
+
+    // load weights
+    if (hasAccessor(primitive, GLTF_JOINTS_ACCESSOR)) {
+        // assume that less that 256 bones for now (TODO: fix)
+        const auto joints =
+            getPackedBufferSpan<std::uint8_t[4]>(model, primitive, GLTF_JOINTS_ACCESSOR);
+        const auto weights = getPackedBufferSpan<float[4]>(model, primitive, GLTF_WEIGHTS_ACCESSOR);
+
+        const auto numVertices = mesh.vertices.size();
+        assert(joints.size() == numVertices);
+        assert(weights.size() == numVertices);
+
+        for (std::size_t i = 0; i < joints.size(); ++i) {
+            for (std::size_t j = 0; j < 4; ++j) {
+                // NOTE: this works because jointId == joint index in skin
+                // (see how skeletons are loaded)
+                mesh.vertices[i].jointIds[j] = joints[i][j];
+            }
+        }
+
+        for (std::size_t i = 0; i < weights.size(); ++i) {
+            for (std::size_t j = 0; j < 4; ++j) {
+                mesh.vertices[i].weights[j] = weights[i][j];
+            }
         }
     }
 }
@@ -413,7 +441,6 @@ Skeleton loadSkeleton(const tinygltf::Model& model, const tinygltf::Skin& skin)
 
     return skeleton;
 }
-
 }
 
 namespace util

@@ -7,8 +7,8 @@
 
 #include <glm/mat4x4.hpp>
 
-using JointId = std::size_t;
-static const std::size_t NULL_JOINT_ID = std::numeric_limits<std::size_t>::max();
+using JointId = std::uint32_t;
+static const std::uint32_t NULL_JOINT_ID = std::numeric_limits<std::uint32_t>::max();
 
 struct Joint {
     JointId id{NULL_JOINT_ID};
