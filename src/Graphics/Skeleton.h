@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include <limits>
 #include <string>
 #include <unordered_map>
@@ -21,8 +20,8 @@ struct Skeleton {
     std::vector<Joint> joints;
 
     struct JointNode {
-        JointId id{NULL_JOINT_ID};
-        std::vector<JointNode> children;
+        JointId parent{NULL_JOINT_ID};
+        std::vector<JointId> children;
     };
-    JointNode root;
+    std::vector<JointNode> hierarchy;
 };

@@ -382,18 +382,33 @@ Skeleton loadSkeleton(const tinygltf::Model& model, const tinygltf::Skin& skin)
     Skeleton skeleton;
     skeleton.joints.reserve(skin.joints.size());
 
-    JointId jointId = 0;
-    for (const auto& nodeIdx : skin.joints) {
-        const auto& jointNode = model.nodes[jointId];
+    std::unordered_map<JointId, int> gltfNodeIdxToJointId;
+    { // load joints
+        JointId jointId{0};
+        for (const auto& nodeIdx : skin.joints) {
+            gltfNodeIdxToJointId.emplace(jointId, nodeIdx);
+            const auto& jointNode = model.nodes[nodeIdx];
 
-        Joint j;
-        j.id = jointId;
-        j.inverseBindMatrix = ibMatrices[jointId];
-        skeleton.jointNames.emplace(jointId, jointNode.name);
+            Joint j;
+            j.id = jointId;
+            j.inverseBindMatrix = ibMatrices[jointId];
+            skeleton.jointNames.emplace(jointId, jointNode.name);
 
-        skeleton.joints.push_back(std::move(j));
+            skeleton.joints.push_back(std::move(j));
 
-        ++jointId;
+            ++jointId;
+        }
+    }
+
+    { // build hierarchy
+        skeleton.hierarchy.resize(skeleton.joints.size());
+        for (JointId jointId = 0; jointId < skeleton.joints.size(); ++jointId) {
+            const auto& jointNode = model.nodes[skin.joints[jointId]];
+            for (const auto& childIdx : jointNode.children) {
+                const auto childJointId = gltfNodeIdxToJointId.at(childIdx);
+                skeleton.hierarchy[jointId].children.push_back(childIdx);
+            }
+        }
     }
 
     return skeleton;
@@ -470,6 +485,23 @@ void SceneLoader::loadScene(const LoadContext& ctx, Scene& scene, const std::fil
     scene.nodes.resize(gltfScene.nodes.size());
     for (std::size_t nodeIdx = 0; nodeIdx < gltfScene.nodes.size(); ++nodeIdx) {
         const auto& gltfNode = gltfModel.nodes[gltfScene.nodes[nodeIdx]];
+
+        // HACK: load mesh with skin (for now only one assumed)
+        if (gltfNode.children.size() == 2) {
+            const auto& c1 = gltfModel.nodes[gltfNode.children[0]];
+            const auto& c2 = gltfModel.nodes[gltfNode.children[1]];
+            if ((c1.mesh != -1 && c1.skin != -1) || (c2.mesh != -1 && c2.skin != -1)) {
+                const auto& meshNode = (c1.mesh != -1) ? c1 : c2;
+
+                auto& nodePtr = scene.nodes[nodeIdx];
+                nodePtr = std::make_unique<SceneNode>();
+                auto& node = *nodePtr;
+                loadNode(node, meshNode, gltfModel);
+
+                continue;
+            }
+        }
+
         if (shouldSkipNode(gltfNode)) {
             continue;
         }
