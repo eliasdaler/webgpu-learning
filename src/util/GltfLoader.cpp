@@ -407,37 +407,44 @@ Skeleton loadSkeleton(const tinygltf::Model& model, const tinygltf::Skin& skin)
     std::vector<glm::mat4> ibMatrices(ibAccessor.count);
     ibMatrices.assign(ibs.begin(), ibs.end());
 
+    const auto numJoints = skin.joints.size();
     Skeleton skeleton;
-    skeleton.joints.reserve(skin.joints.size());
+    skeleton.joints.reserve(numJoints);
+    skeleton.jointMatrices.reserve(numJoints);
+    skeleton.jointNames.reserve(numJoints);
 
-    std::unordered_map<JointId, int> gltfNodeIdxToJointId;
+    std::unordered_map<JointId, int> gltfNodeIdxToJointId(numJoints);
     { // load joints
         JointId jointId{0};
         for (const auto& nodeIdx : skin.joints) {
-            gltfNodeIdxToJointId.emplace(jointId, nodeIdx);
-            const auto& jointNode = model.nodes[nodeIdx];
+            gltfNodeIdxToJointId.emplace(nodeIdx, jointId);
 
-            Joint j;
-            j.id = jointId;
-            j.inverseBindMatrix = ibMatrices[jointId];
+            const auto& jointNode = model.nodes[nodeIdx];
             skeleton.jointNames.emplace(jointId, jointNode.name);
 
-            skeleton.joints.push_back(std::move(j));
+            skeleton.joints.push_back(Joint{
+                .id = jointId,
+                .inverseBindMatrix = ibMatrices[jointId],
+                .localTransform = loadTransform(jointNode),
+            });
+            skeleton.jointMatrices.push_back(glm::mat4{1.f});
 
             ++jointId;
         }
     }
 
     { // build hierarchy
-        skeleton.hierarchy.resize(skeleton.joints.size());
+        skeleton.hierarchy.resize(numJoints);
         for (JointId jointId = 0; jointId < skeleton.joints.size(); ++jointId) {
             const auto& jointNode = model.nodes[skin.joints[jointId]];
             for (const auto& childIdx : jointNode.children) {
                 const auto childJointId = gltfNodeIdxToJointId.at(childIdx);
-                skeleton.hierarchy[jointId].children.push_back(childIdx);
+                skeleton.hierarchy[jointId].children.push_back(childJointId);
             }
         }
     }
+
+    skeleton.updateTransforms();
 
     return skeleton;
 }
