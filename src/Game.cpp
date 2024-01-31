@@ -811,6 +811,14 @@ Game::EntityId Game::createEntitiesFromNode(
                 e.uploadJointMatricesToGPU(queue);
 
                 dataBuffer = e.jointMatricesDataBuffer;
+
+                // FIXME: this is bad - we need to have some sort of cache
+                // and not copy animations everywhere
+                e.animations = scene.animations;
+
+                e.skeletonAnimator.init(e.skeleton);
+                e.skeletonAnimator.setAnimation(e.skeleton, e.animations.at("Run"));
+                e.skeletonAnimator.animate(e.skeleton);
             }
         }
 
@@ -1158,26 +1166,13 @@ void Game::update(float dt)
         queue.WriteBuffer(frameDataBuffer, 0, &ud, sizeof(PerFrameData));
     }
 
-    { // move bones manually with O, P (until I make animations work)
+    { // update cato's animation
         auto& e = findEntityByName("Cato");
-        float offset = 0.f;
-        if (util::isKeyPressed(SDL_SCANCODE_O)) {
-            offset = 1.5f;
-        } else if (util::isKeyPressed(SDL_SCANCODE_P)) {
-            offset = -1.5f;
-        }
 
-        if (offset != 0.f) {
-            e.skeleton.joints[5].localTransform.heading =
-                glm::angleAxis(glm::radians(offset), glm::vec3{0.f, 0.f, 1.f}) *
-                e.skeleton.joints[5].localTransform.heading;
-            e.skeleton.joints[6].localTransform.heading =
-                glm::angleAxis(glm::radians(offset), glm::vec3{0.f, 0.f, 1.f}) *
-                e.skeleton.joints[6].localTransform.heading;
-
-            e.skeleton.updateTransforms();
-            e.uploadJointMatricesToGPU(queue);
-        }
+        e.skeletonAnimator.update(dt);
+        e.skeletonAnimator.animate(e.skeleton);
+        e.skeleton.jointMatrices = e.skeletonAnimator.getJointMatrices();
+        e.uploadJointMatricesToGPU(queue);
     }
 
     updateEntityTransforms();

@@ -10,6 +10,7 @@
 #include <Graphics/GPUMesh.h>
 #include <Graphics/Material.h>
 #include <Graphics/Scene.h>
+#include <Graphics/SkeletonAnimator.h>
 
 #include "FreeCameraController.h"
 #include "MaterialCache.h"
@@ -49,9 +50,14 @@ public:
         wgpu::Buffer meshDataBuffer;
         wgpu::BindGroup meshBindGroup;
 
+        // skeleton
         Skeleton skeleton;
         wgpu::Buffer jointMatricesDataBuffer;
         bool hasSkeleton{false};
+
+        // animation
+        SkeletonAnimator skeletonAnimator;
+        std::unordered_map<std::string, SkeletalAnimation> animations;
 
         void uploadJointMatricesToGPU(const wgpu::Queue& queue) const;
     };

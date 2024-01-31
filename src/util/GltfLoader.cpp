@@ -402,7 +402,10 @@ void loadNode(SceneNode& node, const tinygltf::Node& gltfNode, const tinygltf::M
     }
 }
 
-Skeleton loadSkeleton(const tinygltf::Model& model, const tinygltf::Skin& skin)
+Skeleton loadSkeleton(
+    std::unordered_map<int, JointId>& gltfNodeIdxToJointId,
+    const tinygltf::Model& model,
+    const tinygltf::Skin& skin)
 {
     // load inverse bind matrices
     const auto& ibAccessor = model.accessors[skin.inverseBindMatrices];
@@ -416,7 +419,7 @@ Skeleton loadSkeleton(const tinygltf::Model& model, const tinygltf::Skin& skin)
     skeleton.jointMatrices.reserve(numJoints);
     skeleton.jointNames.reserve(numJoints);
 
-    std::unordered_map<JointId, int> gltfNodeIdxToJointId(numJoints);
+    gltfNodeIdxToJointId.reserve(numJoints);
     { // load joints
         JointId jointId{0};
         for (const auto& nodeIdx : skin.joints) {
@@ -451,6 +454,83 @@ Skeleton loadSkeleton(const tinygltf::Model& model, const tinygltf::Skin& skin)
 
     return skeleton;
 }
+
+std::unordered_map<std::string, SkeletalAnimation> loadAnimations(
+    const Skeleton& skeleton,
+    const std::unordered_map<int, JointId>& gltfNodeIdxToJointId,
+    const tinygltf::Model& gltfModel)
+{
+    std::unordered_map<std::string, SkeletalAnimation> animations(gltfModel.animations.size());
+    for (const auto& gltfAnimation : gltfModel.animations) {
+        auto& animation = animations[gltfAnimation.name];
+        animation.name = gltfAnimation.name;
+
+        const auto numJoints = skeleton.joints.size();
+
+        animation.positionKeys.resize(numJoints);
+        animation.rotationKeys.resize(numJoints);
+        animation.scalingKeys.resize(numJoints);
+
+        for (const auto& channel : gltfAnimation.channels) {
+            const auto& sampler = gltfAnimation.samplers[channel.sampler];
+
+            const auto& timesAccessor = gltfModel.accessors[sampler.input];
+            const auto times = getPackedBufferSpan<float>(gltfModel, timesAccessor);
+
+            animation.duration =
+                static_cast<float>(timesAccessor.maxValues[0] - timesAccessor.minValues[0]);
+            if (animation.duration == 0) {
+                continue; // skip empty animations (e.g. keying sets)
+            }
+
+            if (channel.target_path == "weights") {
+                // FIXME: find out why this channel exists
+                // no idea what this is, but sometimes breaks stuff
+                continue;
+            }
+
+            const auto nodeId = channel.target_node;
+            const auto jointId = gltfNodeIdxToJointId.at(nodeId);
+
+            const auto& outputAccessor = gltfModel.accessors[sampler.output];
+            assert(outputAccessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+            if (channel.target_path == GLTF_SAMPLER_PATH_TRANSLATION) {
+                const auto translationKeys =
+                    getPackedBufferSpan<glm::vec3>(gltfModel, outputAccessor);
+                auto& pk = animation.positionKeys[jointId];
+                pk.reserve(translationKeys.size());
+                assert(translationKeys.size() == times.size());
+                for (std::size_t i = 0; i < translationKeys.size(); ++i) {
+                    pk.push_back({translationKeys[i], times[i]});
+                }
+            } else if (channel.target_path == GLTF_SAMPLER_PATH_ROTATION) {
+                const auto rotationKeys = getPackedBufferSpan<glm::vec4>(gltfModel, outputAccessor);
+                auto& rk = animation.rotationKeys[jointId];
+                rk.reserve(rotationKeys.size());
+                assert(rotationKeys.size() == times.size());
+                for (std::size_t i = 0; i < rotationKeys.size(); ++i) {
+                    const auto& qv = rotationKeys[i];
+                    const glm::quat quat{qv.w, qv.x, qv.y, qv.z};
+                    rk.push_back({quat, times[i]});
+                }
+            } else if (channel.target_path == GLTF_SAMPLER_PATH_SCALE) {
+                const auto scaleKeys =
+                    getPackedBufferSpan<const glm::vec3>(gltfModel, outputAccessor);
+                auto& sk = animation.scalingKeys[jointId];
+                sk.reserve(scaleKeys.size());
+                assert(scaleKeys.size() == times.size());
+                for (std::size_t i = 0; i < scaleKeys.size(); ++i) {
+                    sk.push_back({scaleKeys[i], times[i]});
+                }
+            } else {
+                assert(false && "unexpected target_path");
+            }
+        }
+    }
+
+    return animations;
+}
+
 }
 
 namespace util
@@ -515,7 +595,13 @@ void SceneLoader::loadScene(const LoadContext& ctx, Scene& scene, const std::fil
 
     scene.skeletons.reserve(gltfModel.skins.size());
     for (const auto& skin : gltfModel.skins) {
-        scene.skeletons.push_back(loadSkeleton(gltfModel, skin));
+        scene.skeletons.push_back(loadSkeleton(gltfNodeIdxToJointId, gltfModel, skin));
+    }
+
+    // load animations
+    if (!gltfModel.skins.empty()) {
+        assert(gltfModel.skins.size() == 1); // for now only one skeleton supported
+        scene.animations = loadAnimations(scene.skeletons[0], gltfNodeIdxToJointId, gltfModel);
     }
 
     // load nodes

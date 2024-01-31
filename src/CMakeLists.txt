@@ -4,6 +4,7 @@ add_executable(game
   Graphics/Camera.cpp
   Graphics/Mesh.cpp
   Graphics/Skeleton.cpp
+  Graphics/SkeletonAnimator.cpp
 
   util/GltfLoader.cpp
   util/ImageLoader.cpp

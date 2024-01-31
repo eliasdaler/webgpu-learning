@@ -1,10 +1,13 @@
 #pragma once
 
 #include <memory>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <Graphics/GPUMesh.h>
 #include <Graphics/Material.h>
+#include <Graphics/SkeletalAnimation.h>
 #include <Graphics/Skeleton.h>
 #include <Math/Transform.h>
 
@@ -26,4 +29,5 @@ struct Scene {
     std::vector<SceneMesh> meshes;
     std::vector<std::unique_ptr<SceneNode>> nodes;
     std::vector<Skeleton> skeletons;
+    std::unordered_map<std::string, SkeletalAnimation> animations;
 };
