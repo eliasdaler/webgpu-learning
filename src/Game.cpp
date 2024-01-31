@@ -817,6 +817,7 @@ Game::EntityId Game::createEntitiesFromNode(
                 e.animations = scene.animations;
 
                 e.skeletonAnimator.setAnimation(e.skeleton, e.animations.at("PickUp"));
+                // e.skeletonAnimator.setAnimation(e.skeleton, e.animations.at("Run"));
             }
         }
 

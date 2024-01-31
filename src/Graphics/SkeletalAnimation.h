@@ -6,25 +6,22 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/vec3.hpp>
 
+struct TranslationChannel {
+    std::vector<glm::vec3> translations;
+};
+
+struct RotationChannel {
+    std::vector<glm::quat> rotations;
+};
+
+struct ScaleChannel {
+    std::vector<glm::vec3> scales;
+};
+
 struct SkeletalAnimation {
-    struct PositionKey {
-        glm::vec3 pos;
-        float time;
-    };
-
-    struct RotationKey {
-        glm::quat quat;
-        float time;
-    };
-
-    struct ScalingKey {
-        glm::vec3 scale;
-        float time;
-    };
-
-    std::vector<std::vector<PositionKey>> positionKeys;
-    std::vector<std::vector<RotationKey>> rotationKeys;
-    std::vector<std::vector<ScalingKey>> scalingKeys;
+    std::vector<TranslationChannel> translationChannels;
+    std::vector<RotationChannel> rotationChannels;
+    std::vector<ScaleChannel> scaleChannels;
 
     std::string name;
     float duration{0.f}; // in seconds

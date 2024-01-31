@@ -467,9 +467,9 @@ std::unordered_map<std::string, SkeletalAnimation> loadAnimations(
 
         const auto numJoints = skeleton.joints.size();
 
-        animation.positionKeys.resize(numJoints);
-        animation.rotationKeys.resize(numJoints);
-        animation.scalingKeys.resize(numJoints);
+        animation.translationChannels.resize(numJoints);
+        animation.rotationChannels.resize(numJoints);
+        animation.scaleChannels.resize(numJoints);
 
         for (const auto& channel : gltfAnimation.channels) {
             const auto& sampler = gltfAnimation.samplers[channel.sampler];
@@ -497,31 +497,48 @@ std::unordered_map<std::string, SkeletalAnimation> loadAnimations(
             if (channel.target_path == GLTF_SAMPLER_PATH_TRANSLATION) {
                 const auto translationKeys =
                     getPackedBufferSpan<glm::vec3>(gltfModel, outputAccessor);
-                auto& pk = animation.positionKeys[jointId];
-                pk.reserve(translationKeys.size());
-                assert(translationKeys.size() == times.size());
-                for (std::size_t i = 0; i < translationKeys.size(); ++i) {
-                    pk.push_back({translationKeys[i], times[i]});
+
+                auto& tc = animation.translationChannels[jointId].translations;
+                if (translationKeys.size() == 2 && translationKeys[0] == translationKeys[1]) {
+                    tc.push_back(translationKeys[0]);
+                } else {
+                    if (jointId == 0) {
+                        assert(translationKeys.size() != 2);
+                    }
+                    tc.reserve(translationKeys.size());
+                    for (const auto& key : translationKeys) {
+                        tc.push_back(key);
+                    }
                 }
+
             } else if (channel.target_path == GLTF_SAMPLER_PATH_ROTATION) {
                 const auto rotationKeys = getPackedBufferSpan<glm::vec4>(gltfModel, outputAccessor);
-                auto& rk = animation.rotationKeys[jointId];
-                rk.reserve(rotationKeys.size());
-                assert(rotationKeys.size() == times.size());
-                for (std::size_t i = 0; i < rotationKeys.size(); ++i) {
-                    const auto& qv = rotationKeys[i];
-                    const glm::quat quat{qv.w, qv.x, qv.y, qv.z};
-                    rk.push_back({quat, times[i]});
+                auto& rc = animation.rotationChannels[jointId].rotations;
+                if (rotationKeys.size() == 2 && rotationKeys[0] == rotationKeys[1]) {
+                    const auto& qv = rotationKeys[0];
+                    const glm::quat q{qv.w, qv.x, qv.y, qv.z};
+                    rc.push_back(q);
+                } else {
+                    rc.reserve(rotationKeys.size());
+                    for (const auto& qv : rotationKeys) {
+                        const glm::quat q{qv.w, qv.x, qv.y, qv.z};
+                        rc.push_back(q);
+                    }
                 }
             } else if (channel.target_path == GLTF_SAMPLER_PATH_SCALE) {
                 const auto scaleKeys =
                     getPackedBufferSpan<const glm::vec3>(gltfModel, outputAccessor);
-                auto& sk = animation.scalingKeys[jointId];
-                sk.reserve(scaleKeys.size());
-                assert(scaleKeys.size() == times.size());
-                for (std::size_t i = 0; i < scaleKeys.size(); ++i) {
-                    sk.push_back({scaleKeys[i], times[i]});
+
+                auto& sc = animation.scaleChannels[jointId].scales;
+                if (scaleKeys.size() == 2 && scaleKeys[0] == scaleKeys[1]) {
+                    sc.push_back(scaleKeys[0]);
+                } else {
+                    sc.reserve(scaleKeys.size());
+                    for (const auto& key : scaleKeys) {
+                        sc.push_back(key);
+                    }
                 }
+
             } else {
                 assert(false && "unexpected target_path");
             }

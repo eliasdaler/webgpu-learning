@@ -5,6 +5,8 @@
 
 #include <glm/gtx/compatibility.hpp> // lerp for vec3
 
+#include <iostream>
+
 namespace
 {
 static const int ANIMATION_FPS = 30;
@@ -85,51 +87,53 @@ void updateJointTransform(
     return f(transform, prevKey, nextKey, t);
 }
 
+std::tuple<std::size_t, std::size_t, float> findPrevNextKeys2(
+    std::size_t numKeys,
+    float time,
+    float animationDuration)
+{
+    std::size_t prevKey = std::min((std::size_t)std::floor(time * ANIMATION_FPS), numKeys - 1);
+    std::size_t nextKey = std::min(prevKey + 1, numKeys - 1);
+    float t = 0.0f;
+    if (prevKey != nextKey) {
+        t = time * ANIMATION_FPS - (float)prevKey;
+    }
+
+    return {prevKey, nextKey, t};
+}
+
 void updateJointLocalTransform(
     JointId jointId,
     Transform& transform,
     const SkeletalAnimation& animation,
     float time)
 {
-    // translation
-    const auto& posKeys = animation.positionKeys[jointId];
-    updateJointTransform(
-        transform,
-        posKeys,
-        time,
-        [&posKeys](Transform& transform, std::size_t prevKey, std::size_t nextKey, float t) {
-            const auto& prevPos = posKeys[prevKey].pos;
-            const auto& nextPos = posKeys[nextKey].pos;
-            transform.position = glm::lerp(prevPos, nextPos, t);
-        });
-
-    // rotation
-    const auto& rotKeys = animation.rotationKeys[jointId];
-    updateJointTransform(
-        transform,
-        rotKeys,
-        time,
-        [&rotKeys](Transform& transform, std::size_t prevKey, std::size_t nextKey, float t) {
-            const auto& prevHeading = rotKeys[prevKey].quat;
-            const auto& nextHeading = rotKeys[nextKey].quat;
-            transform.heading = glm::slerp(prevHeading, nextHeading, t);
-        });
-
-    // scaling
-    const auto& scalingKeys = animation.scalingKeys[jointId];
-    if (scalingKeys.empty()) {
-        return;
+    {
+        const auto& tc = animation.translationChannels[jointId];
+        if (!tc.translations.empty()) {
+            const auto [p, n, t] =
+                findPrevNextKeys2(tc.translations.size(), time, animation.duration);
+            transform.position = glm::lerp(tc.translations[p], tc.translations[n], t);
+        }
     }
 
-    updateJointTransform(
-        transform,
-        scalingKeys,
-        time,
-        [&scalingKeys](Transform& transform, std::size_t prevKey, std::size_t nextKey, float t) {
-            const auto& prevScale = scalingKeys[prevKey].scale;
-            const auto& nextScale = scalingKeys[nextKey].scale;
-            transform.scale = glm::lerp(prevScale, nextScale, t);
-        });
+    {
+        const auto& rc = animation.rotationChannels[jointId];
+        if (!rc.rotations.empty()) {
+            const auto [p, n, t] = findPrevNextKeys2(rc.rotations.size(), time, animation.duration);
+            transform.heading = glm::slerp(rc.rotations[p], rc.rotations[n], t);
+        }
+    }
+
+    {
+        const auto& sc = animation.scaleChannels[jointId];
+        if (!sc.scales.empty()) {
+            const auto [p, n, t] = findPrevNextKeys2(sc.scales.size(), time, animation.duration);
+            transform.scale = glm::lerp(sc.scales[p], sc.scales[n], t);
+        }
+    }
+
+    return;
 }
 
 void skeletonAnimate(
