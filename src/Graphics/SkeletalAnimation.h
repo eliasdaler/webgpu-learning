@@ -7,9 +7,6 @@
 #include <glm/vec3.hpp>
 
 struct SkeletalAnimation {
-    std::string name;
-    float duration{0.f}; // in seconds
-
     struct PositionKey {
         glm::vec3 pos;
         float time;
@@ -29,6 +26,7 @@ struct SkeletalAnimation {
     std::vector<std::vector<RotationKey>> rotationKeys;
     std::vector<std::vector<ScalingKey>> scalingKeys;
 
-    float startFrame{0.f};
+    std::string name;
+    float duration{0.f}; // in seconds
     bool looped{true};
 };

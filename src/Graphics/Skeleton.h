@@ -10,7 +10,8 @@
 #include <Math/Transform.h>
 
 using JointId = std::uint32_t;
-static const std::uint32_t NULL_JOINT_ID = std::numeric_limits<std::uint32_t>::max();
+static const JointId NULL_JOINT_ID = std::numeric_limits<std::uint32_t>::max();
+static const JointId ROOT_JOINT_ID = 0;
 
 struct Joint {
     JointId id{NULL_JOINT_ID};

@@ -10,27 +10,21 @@ namespace
 static const int ANIMATION_FPS = 30;
 }
 
-void SkeletonAnimator::init(const Skeleton& skeleton)
-{
-    boneAnimationMats = std::vector<glm::mat4>(skeleton.joints.size(), glm::mat4{1.f});
-}
-
-void SkeletonAnimator::setAnimation(const Skeleton& skeleton, const SkeletalAnimation& animation)
+void SkeletonAnimator::setAnimation(Skeleton& skeleton, const SkeletalAnimation& animation)
 {
     if (this->animation != nullptr && this->animation->name == animation.name) {
         return; // TODO: allow to reset animation
     }
     time = 0.f;
     frameChanged = false; // ideally should be "true", but update will override it
-    time = static_cast<float>(animation.startFrame) / ANIMATION_FPS;
     animationFinished = false;
     this->animation = &animation;
-    animate(skeleton);
+    updateTransforms(skeleton);
 }
 
-void SkeletonAnimator::update(float dt)
+void SkeletonAnimator::update(Skeleton& skeleton, float dt)
 {
-    if (!animation) {
+    if (!animation || animationFinished) {
         return;
     }
 
@@ -43,6 +37,7 @@ void SkeletonAnimator::update(float dt)
             animationFinished = true;
         }
     }
+    updateTransforms(skeleton);
 }
 
 const std::string& SkeletonAnimator::getCurrentAnimationName() const
@@ -57,11 +52,11 @@ namespace
 template<typename KeyType>
 std::pair<std::size_t, std::size_t> findPrevNextKeys(const std::vector<KeyType>& keys, float time)
 {
+    assert(!keys.empty());
     std::size_t prevKey{0}, nextKey{0};
-    const int max = static_cast<int>(keys.size()) - 1;
-    for (int i = 0; i < max; ++i) {
-        prevKey = static_cast<std::size_t>(i);
-        nextKey = static_cast<std::size_t>(i + 1);
+    for (std::size_t i = 0; i < keys.size() - 1; ++i) {
+        prevKey = i;
+        nextKey = i + 1;
         if (keys[nextKey].time >= time) {
             break;
         }
@@ -70,88 +65,89 @@ std::pair<std::size_t, std::size_t> findPrevNextKeys(const std::vector<KeyType>&
 }
 
 template<typename KeyType, typename InterpolationFuncType>
-glm::mat4 getKeyTransform(const std::vector<KeyType>& keys, float time, InterpolationFuncType f)
+void updateJointTransform(
+    Transform& transform,
+    const std::vector<KeyType>& keys,
+    float time,
+    InterpolationFuncType f)
 {
     if (keys.empty()) {
-        return glm::mat4{1.f};
+        return;
     }
 
     const auto [prevKey, nextKey] = findPrevNextKeys(keys, time);
     if (prevKey == nextKey) { // reached animation's end
-        return glm::mat4{1.f};
+        return;
     }
 
     const auto totalTime = keys[nextKey].time - keys[prevKey].time;
     const auto t = (time - keys[prevKey].time) / totalTime;
-    return f(prevKey, nextKey, t);
+    return f(transform, prevKey, nextKey, t);
 }
 
-glm::mat4 getBoneLocalTransform(float time, const SkeletalAnimation& anim, JointId jointId)
+void updateJointLocalTransform(
+    JointId jointId,
+    Transform& transform,
+    const SkeletalAnimation& animation,
+    float time)
 {
     // translation
-    const auto& posKeys = anim.positionKeys[jointId];
-    const auto boneT = getKeyTransform(
-        posKeys, time, [&posKeys](std::size_t prevKey, std::size_t nextKey, float t) {
-            const auto& vi = posKeys[prevKey].pos;
-            const auto& vf = posKeys[nextKey].pos;
-            const auto lerped = glm::lerp(vi, vf, t);
-            return glm::translate(glm::mat4{1.f}, lerped);
+    const auto& posKeys = animation.positionKeys[jointId];
+    updateJointTransform(
+        transform,
+        posKeys,
+        time,
+        [&posKeys](Transform& transform, std::size_t prevKey, std::size_t nextKey, float t) {
+            const auto& prevPos = posKeys[prevKey].pos;
+            const auto& nextPos = posKeys[nextKey].pos;
+            transform.position = glm::lerp(prevPos, nextPos, t);
         });
 
     // rotation
-    const auto& rotKeys = anim.rotationKeys[jointId];
-    const auto boneR = getKeyTransform(
-        rotKeys, time, [&rotKeys](std::size_t prevKey, std::size_t nextKey, float t) {
-            const auto& qi = rotKeys[prevKey].quat;
-            const auto& qf = rotKeys[nextKey].quat;
-            const auto slerped = glm::slerp(qi, qf, t);
-            return glm::mat4_cast(slerped);
+    const auto& rotKeys = animation.rotationKeys[jointId];
+    updateJointTransform(
+        transform,
+        rotKeys,
+        time,
+        [&rotKeys](Transform& transform, std::size_t prevKey, std::size_t nextKey, float t) {
+            const auto& prevHeading = rotKeys[prevKey].quat;
+            const auto& nextHeading = rotKeys[nextKey].quat;
+            transform.heading = glm::slerp(prevHeading, nextHeading, t);
         });
 
     // scaling
-    const auto& scalingKeys = anim.scalingKeys[jointId];
+    const auto& scalingKeys = animation.scalingKeys[jointId];
     if (scalingKeys.empty()) {
-        return boneT * boneR;
+        return;
     }
 
-    const auto boneS = getKeyTransform(
-        scalingKeys, time, [&scalingKeys](std::size_t prevKey, std::size_t nextKey, float t) {
-            const auto& vi = scalingKeys[prevKey].scale;
-            const auto& vf = scalingKeys[nextKey].scale;
-            const auto lerped = glm::lerp(vi, vf, t);
-            return glm::scale(glm::mat4{1.f}, lerped);
+    updateJointTransform(
+        transform,
+        scalingKeys,
+        time,
+        [&scalingKeys](Transform& transform, std::size_t prevKey, std::size_t nextKey, float t) {
+            const auto& prevScale = scalingKeys[prevKey].scale;
+            const auto& nextScale = scalingKeys[nextKey].scale;
+            transform.scale = glm::lerp(prevScale, nextScale, t);
         });
-
-    return boneT * boneR * boneS;
 }
 
 void skeletonAnimate(
-    float time,
-    const Skeleton& skeleton,
-    const SkeletalAnimation& anim,
+    Skeleton& skeleton,
     JointId jointId,
-    const glm::mat4& parentMat,
-    std::vector<glm::mat4>& jointMatrices)
+    const SkeletalAnimation& animation,
+    float time)
 {
-    const auto localJointTransform = getBoneLocalTransform(time, anim, jointId);
-    const auto globalJointTransform = parentMat * localJointTransform;
-
-    const auto& inverseBindMatrix = skeleton.joints[jointId].inverseBindMatrix;
-    jointMatrices[jointId] = globalJointTransform * inverseBindMatrix;
-
-    // recurse
+    auto& joint = skeleton.joints[jointId];
+    updateJointLocalTransform(jointId, joint.localTransform, animation, time);
     for (const auto childIdx : skeleton.hierarchy[jointId].children) {
-        skeletonAnimate(time, skeleton, anim, childIdx, globalJointTransform, jointMatrices);
+        skeletonAnimate(skeleton, childIdx, animation, time);
     }
 }
 } // end of anonymous namespace
 
-void SkeletonAnimator::animate(const Skeleton& skeleton)
+void SkeletonAnimator::updateTransforms(Skeleton& skeleton)
 {
-    if (!animation) {
-        return;
-    }
-    assert(!boneAnimationMats.empty()); // forgot to call init?
-
-    skeletonAnimate(time, skeleton, *animation, 0, glm::mat4{1.f}, boneAnimationMats);
+    skeletonAnimate(skeleton, ROOT_JOINT_ID, *animation, time);
+    skeleton.updateTransforms();
 }

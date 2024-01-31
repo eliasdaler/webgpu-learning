@@ -816,9 +816,7 @@ Game::EntityId Game::createEntitiesFromNode(
                 // and not copy animations everywhere
                 e.animations = scene.animations;
 
-                e.skeletonAnimator.init(e.skeleton);
-                e.skeletonAnimator.setAnimation(e.skeleton, e.animations.at("Run"));
-                e.skeletonAnimator.animate(e.skeleton);
+                e.skeletonAnimator.setAnimation(e.skeleton, e.animations.at("PickUp"));
             }
         }
 
@@ -1167,11 +1165,10 @@ void Game::update(float dt)
     }
 
     { // update cato's animation
-        auto& e = findEntityByName("Cato");
+        ZoneScopedN("Skeletal animation");
 
-        e.skeletonAnimator.update(dt);
-        e.skeletonAnimator.animate(e.skeleton);
-        e.skeleton.jointMatrices = e.skeletonAnimator.getJointMatrices();
+        auto& e = findEntityByName("Cato");
+        e.skeletonAnimator.update(e.skeleton, dt);
         e.uploadJointMatricesToGPU(queue);
     }
 
@@ -1191,6 +1188,7 @@ void Game::Entity::uploadJointMatricesToGPU(const wgpu::Queue& queue) const
 
 void Game::updateEntityTransforms()
 {
+    ZoneScopedN("Update entity transforms");
     const auto I = glm::mat4{1.f};
     for (auto& ePtr : entities) {
         auto& e = *ePtr;
