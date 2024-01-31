@@ -5,8 +5,6 @@
 
 #include <glm/gtx/compatibility.hpp> // lerp for vec3
 
-#include <iostream>
-
 namespace
 {
 static const int ANIMATION_FPS = 30;
@@ -50,44 +48,7 @@ const std::string& SkeletonAnimator::getCurrentAnimationName() const
 
 namespace
 {
-// prevKey's time <= time && nextKey's time >= time
-template<typename KeyType>
-std::pair<std::size_t, std::size_t> findPrevNextKeys(const std::vector<KeyType>& keys, float time)
-{
-    assert(!keys.empty());
-    std::size_t prevKey{0}, nextKey{0};
-    for (std::size_t i = 0; i < keys.size() - 1; ++i) {
-        prevKey = i;
-        nextKey = i + 1;
-        if (keys[nextKey].time >= time) {
-            break;
-        }
-    }
-    return {prevKey, nextKey};
-}
-
-template<typename KeyType, typename InterpolationFuncType>
-void updateJointTransform(
-    Transform& transform,
-    const std::vector<KeyType>& keys,
-    float time,
-    InterpolationFuncType f)
-{
-    if (keys.empty()) {
-        return;
-    }
-
-    const auto [prevKey, nextKey] = findPrevNextKeys(keys, time);
-    if (prevKey == nextKey) { // reached animation's end
-        return;
-    }
-
-    const auto totalTime = keys[nextKey].time - keys[prevKey].time;
-    const auto t = (time - keys[prevKey].time) / totalTime;
-    return f(transform, prevKey, nextKey, t);
-}
-
-std::tuple<std::size_t, std::size_t, float> findPrevNextKeys2(
+std::tuple<std::size_t, std::size_t, float> findPrevNextKeys(
     std::size_t numKeys,
     float time,
     float animationDuration)
@@ -112,7 +73,7 @@ void updateJointLocalTransform(
         const auto& tc = animation.translationChannels[jointId];
         if (!tc.translations.empty()) {
             const auto [p, n, t] =
-                findPrevNextKeys2(tc.translations.size(), time, animation.duration);
+                findPrevNextKeys(tc.translations.size(), time, animation.duration);
             transform.position = glm::lerp(tc.translations[p], tc.translations[n], t);
         }
     }
@@ -120,7 +81,7 @@ void updateJointLocalTransform(
     {
         const auto& rc = animation.rotationChannels[jointId];
         if (!rc.rotations.empty()) {
-            const auto [p, n, t] = findPrevNextKeys2(rc.rotations.size(), time, animation.duration);
+            const auto [p, n, t] = findPrevNextKeys(rc.rotations.size(), time, animation.duration);
             transform.heading = glm::slerp(rc.rotations[p], rc.rotations[n], t);
         }
     }
@@ -128,7 +89,7 @@ void updateJointLocalTransform(
     {
         const auto& sc = animation.scaleChannels[jointId];
         if (!sc.scales.empty()) {
-            const auto [p, n, t] = findPrevNextKeys2(sc.scales.size(), time, animation.duration);
+            const auto [p, n, t] = findPrevNextKeys(sc.scales.size(), time, animation.duration);
             transform.scale = glm::lerp(sc.scales[p], sc.scales[n], t);
         }
     }
