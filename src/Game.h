@@ -59,7 +59,9 @@ public:
         SkeletonAnimator skeletonAnimator;
         std::unordered_map<std::string, SkeletalAnimation> animations;
 
-        void uploadJointMatricesToGPU(const wgpu::Queue& queue) const;
+        void uploadJointMatricesToGPU(
+            const wgpu::Queue& queue,
+            const std::vector<glm::mat4>& jointMatrices) const;
     };
 
     struct DrawCommand {

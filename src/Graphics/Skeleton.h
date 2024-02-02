@@ -14,7 +14,6 @@ static const JointId ROOT_JOINT_ID = 0;
 
 struct Joint {
     JointId id{NULL_JOINT_ID};
-    glm::mat4 inverseBindMatrix{1.f};
     Transform localTransform;
 };
 
@@ -22,15 +21,9 @@ struct Skeleton {
     struct JointNode {
         std::vector<JointId> children;
     };
-
-    void updateTransforms();
+    std::vector<JointNode> hierarchy;
+    std::vector<glm::mat4> inverseBindMatrices;
 
     std::vector<Joint> joints;
-    std::vector<JointNode> hierarchy;
-    std::vector<glm::mat4> jointMatrices;
-
     std::vector<std::string> jointNames;
-
-private:
-    void updateTransforms(JointId id, const glm::mat4& parentWorldMatrix);
 };

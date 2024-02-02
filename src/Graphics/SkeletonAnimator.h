@@ -1,17 +1,19 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include <glm/mat4x4.hpp>
 
+#include <Graphics/Skeleton.h>
+
 struct SkeletalAnimation;
-struct Skeleton;
 
 class SkeletonAnimator {
 public:
-    void setAnimation(Skeleton& skeleton, const SkeletalAnimation& animation);
+    void setAnimation(const Skeleton& skeleton, const SkeletalAnimation& animation);
 
-    void update(Skeleton& skeleton, float dt);
+    void update(const Skeleton& skeleton, float dt);
 
     const SkeletalAnimation* getAnimation() const { return animation; }
     const std::string& getCurrentAnimationName() const;
@@ -23,12 +25,20 @@ public:
     void setNormalizedProgress(float t);
     float getNormalizedProgress() const;
 
+    const std::vector<glm::mat4>& getJointMatrices() const { return jointMatrices; };
+
 private:
-    void updateTransforms(Skeleton& skeleton);
+    void calculateJointMatrices(const Skeleton& skeleton);
+    void calculateJointMatrix(
+        const Skeleton& skeleton,
+        JointId jointId,
+        const SkeletalAnimation& animation,
+        float time,
+        const glm::mat4& parentTransform);
 
-    float time{0}; // current animation time
-    // TODO: use shared_ptr here? (so that we can see which anims are still in use?)
+    float time{0}; // current animation time (in seconds)
     const SkeletalAnimation* animation{nullptr};
-
     bool animationFinished{false};
+
+    std::vector<glm::mat4> jointMatrices;
 };

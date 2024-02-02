@@ -416,7 +416,7 @@ Skeleton loadSkeleton(
     const auto numJoints = skin.joints.size();
     Skeleton skeleton;
     skeleton.joints.reserve(numJoints);
-    skeleton.jointMatrices.reserve(numJoints);
+    skeleton.inverseBindMatrices = ibMatrices;
     skeleton.jointNames.resize(numJoints);
 
     gltfNodeIdxToJointId.reserve(numJoints);
@@ -430,10 +430,8 @@ Skeleton loadSkeleton(
 
             skeleton.joints.push_back(Joint{
                 .id = jointId,
-                .inverseBindMatrix = ibMatrices[jointId],
                 .localTransform = loadTransform(jointNode),
             });
-            skeleton.jointMatrices.push_back(glm::mat4{1.f});
 
             ++jointId;
         }
@@ -449,8 +447,6 @@ Skeleton loadSkeleton(
             }
         }
     }
-
-    skeleton.updateTransforms();
 
     return skeleton;
 }

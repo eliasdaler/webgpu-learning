@@ -12,18 +12,21 @@ namespace
 static const int ANIMATION_FPS = 30;
 }
 
-void SkeletonAnimator::setAnimation(Skeleton& skeleton, const SkeletalAnimation& animation)
+void SkeletonAnimator::setAnimation(const Skeleton& skeleton, const SkeletalAnimation& animation)
 {
     if (this->animation != nullptr && this->animation->name == animation.name) {
         return; // TODO: allow to reset animation
     }
+
+    jointMatrices.resize(skeleton.joints.size());
+
     time = 0.f;
     animationFinished = false;
     this->animation = &animation;
-    updateTransforms(skeleton);
+    calculateJointMatrices(skeleton);
 }
 
-void SkeletonAnimator::update(Skeleton& skeleton, float dt)
+void SkeletonAnimator::update(const Skeleton& skeleton, float dt)
 {
     if (!animation || animationFinished) {
         return;
@@ -38,7 +41,9 @@ void SkeletonAnimator::update(Skeleton& skeleton, float dt)
             animationFinished = true;
         }
     }
-    updateTransforms(skeleton);
+
+    static const glm::mat4 I{1.f};
+    calculateJointMatrix(skeleton, ROOT_JOINT_ID, *animation, time, I);
 }
 
 const std::string& SkeletonAnimator::getCurrentAnimationName() const
@@ -68,13 +73,11 @@ std::tuple<std::size_t, std::size_t, float> findPrevNextKeys(
     return {prevKey, nextKey, t};
 }
 
-void updateJointLocalTransform(
-    JointId jointId,
-    Transform& transform,
-    const SkeletalAnimation& animation,
-    float time)
+Transform sampleAnimation(const SkeletalAnimation& animation, JointId jointId, float time)
 {
-    {
+    Transform transform{};
+
+    { // translation
         const auto& tc = animation.translationChannels[jointId];
         if (!tc.translations.empty()) {
             const auto [p, n, t] =
@@ -83,15 +86,16 @@ void updateJointLocalTransform(
         }
     }
 
-    {
+    { // rotation
         const auto& rc = animation.rotationChannels[jointId];
         if (!rc.rotations.empty()) {
             const auto [p, n, t] = findPrevNextKeys(rc.rotations.size(), time, animation.duration);
-            transform.heading = glm::slerp(rc.rotations[p], rc.rotations[n], t);
+            // slerp is slower, lerp is good enough
+            transform.heading = glm::lerp(rc.rotations[p], rc.rotations[n], t);
         }
     }
 
-    {
+    { // scale
         const auto& sc = animation.scaleChannels[jointId];
         if (!sc.scales.empty()) {
             const auto [p, n, t] = findPrevNextKeys(sc.scales.size(), time, animation.duration);
@@ -99,27 +103,31 @@ void updateJointLocalTransform(
         }
     }
 
-    return;
+    return transform;
 }
 
-void skeletonAnimate(
-    Skeleton& skeleton,
-    JointId jointId,
-    const SkeletalAnimation& animation,
-    float time)
-{
-    auto& joint = skeleton.joints[jointId];
-    updateJointLocalTransform(jointId, joint.localTransform, animation, time);
-    for (const auto childIdx : skeleton.hierarchy[jointId].children) {
-        skeletonAnimate(skeleton, childIdx, animation, time);
-    }
-}
 } // end of anonymous namespace
 
-void SkeletonAnimator::updateTransforms(Skeleton& skeleton)
+void SkeletonAnimator::calculateJointMatrices(const Skeleton& skeleton)
 {
-    skeletonAnimate(skeleton, ROOT_JOINT_ID, *animation, time);
-    skeleton.updateTransforms();
+    static const glm::mat4 I{1.f};
+    calculateJointMatrix(skeleton, ROOT_JOINT_ID, *animation, time, I);
+}
+
+void SkeletonAnimator::calculateJointMatrix(
+    const Skeleton& skeleton,
+    JointId jointId,
+    const SkeletalAnimation& animation,
+    float time,
+    const glm::mat4& parentTransform)
+{
+    const auto localTransform = sampleAnimation(animation, jointId, time);
+    const auto globalJointTransform = parentTransform * localTransform.asMatrix();
+    jointMatrices[jointId] = globalJointTransform * skeleton.inverseBindMatrices[jointId];
+
+    for (const auto childIdx : skeleton.hierarchy[jointId].children) {
+        calculateJointMatrix(skeleton, childIdx, animation, time, globalJointTransform);
+    }
 }
 
 void SkeletonAnimator::setNormalizedProgress(float t)

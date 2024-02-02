@@ -816,9 +816,6 @@ Game::EntityId Game::createEntitiesFromNode(
                     .size = sizeof(glm::mat4) * 256,
                 };
                 e.jointMatricesDataBuffer = device.CreateBuffer(&bufferDesc);
-
-                e.uploadJointMatricesToGPU(queue);
-
                 dataBuffer = e.jointMatricesDataBuffer;
 
                 // FIXME: this is bad - we need to have some sort of cache
@@ -827,6 +824,7 @@ Game::EntityId Game::createEntitiesFromNode(
 
                 // e.skeletonAnimator.setAnimation(e.skeleton, e.animations.at("PickUp"));
                 e.skeletonAnimator.setAnimation(e.skeleton, e.animations.at("Run"));
+                e.uploadJointMatricesToGPU(queue, e.skeletonAnimator.getJointMatrices());
             }
         }
 
@@ -1175,11 +1173,13 @@ void Game::update(float dt)
     }
 
     { // update cato's animation
-        ZoneScopedN("Skeletal animation");
 
         auto& e = findEntityByName("Cato");
-        e.skeletonAnimator.update(e.skeleton, dt);
-        e.uploadJointMatricesToGPU(queue);
+        {
+            ZoneScopedN("Skeletal animation");
+            e.skeletonAnimator.update(e.skeleton, dt);
+        }
+        e.uploadJointMatricesToGPU(queue, e.skeletonAnimator.getJointMatrices());
     }
 
     updateEntityTransforms();
@@ -1187,13 +1187,12 @@ void Game::update(float dt)
     updateDevTools(dt);
 }
 
-void Game::Entity::uploadJointMatricesToGPU(const wgpu::Queue& queue) const
+void Game::Entity::uploadJointMatricesToGPU(
+    const wgpu::Queue& queue,
+    const std::vector<glm::mat4>& jointMatrices) const
 {
     queue.WriteBuffer(
-        jointMatricesDataBuffer,
-        0,
-        skeleton.jointMatrices.data(),
-        sizeof(glm::mat4) * skeleton.jointMatrices.size());
+        jointMatricesDataBuffer, 0, jointMatrices.data(), sizeof(glm::mat4) * jointMatrices.size());
 }
 
 void Game::updateEntityTransforms()
