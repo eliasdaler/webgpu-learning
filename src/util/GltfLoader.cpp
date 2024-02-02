@@ -417,7 +417,7 @@ Skeleton loadSkeleton(
     Skeleton skeleton;
     skeleton.joints.reserve(numJoints);
     skeleton.jointMatrices.reserve(numJoints);
-    skeleton.jointNames.reserve(numJoints);
+    skeleton.jointNames.resize(numJoints);
 
     gltfNodeIdxToJointId.reserve(numJoints);
     { // load joints
@@ -426,7 +426,7 @@ Skeleton loadSkeleton(
             gltfNodeIdxToJointId.emplace(nodeIdx, jointId);
 
             const auto& jointNode = model.nodes[nodeIdx];
-            skeleton.jointNames.emplace(jointId, jointNode.name);
+            skeleton.jointNames[jointId] = jointNode.name;
 
             skeleton.joints.push_back(Joint{
                 .id = jointId,

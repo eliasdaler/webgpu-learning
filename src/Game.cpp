@@ -36,6 +36,11 @@ void operator delete(void* ptr) noexcept
     TracyFree(ptr);
     free(ptr);
 }
+void operator delete(void* ptr, std::size_t) noexcept
+{
+    TracyFree(ptr);
+    free(ptr);
+}
 #endif
 
 namespace
@@ -434,6 +439,10 @@ void Game::init()
     auto& yae = findEntityByName("yae_mer");
     yae.transform.position = yaePos;
 
+    const glm::vec3 catoPos{0.f, 0.07f, 0.f};
+    auto& cato = findEntityByName("Cato");
+    cato.transform.position = catoPos;
+
     createSpriteDrawingPipeline();
     createSprite();
 
@@ -816,8 +825,8 @@ Game::EntityId Game::createEntitiesFromNode(
                 // and not copy animations everywhere
                 e.animations = scene.animations;
 
-                e.skeletonAnimator.setAnimation(e.skeleton, e.animations.at("PickUp"));
-                // e.skeletonAnimator.setAnimation(e.skeleton, e.animations.at("Run"));
+                // e.skeletonAnimator.setAnimation(e.skeleton, e.animations.at("PickUp"));
+                e.skeletonAnimator.setAnimation(e.skeleton, e.animations.at("Run"));
             }
         }
 
@@ -1218,6 +1227,39 @@ void Game::updateEntityTransforms(Entity& e, const glm::mat4& parentWorldTransfo
     }
 }
 
+namespace
+{
+void updateSkeletonDisplayUI(const Skeleton& skeleton, JointId jointId)
+{
+    const auto& jointName = skeleton.jointNames[jointId];
+
+    ImGui::PushID(jointId);
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow |
+                               ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                               ImGuiTreeNodeFlags_DefaultOpen;
+
+    const auto& joint = skeleton.joints[jointId];
+    const auto& children = skeleton.hierarchy[jointId].children;
+    if (children.empty()) {
+        flags |= ImGuiTreeNodeFlags_Leaf;
+    }
+
+    const auto label = jointName + ", id = " + std::to_string(jointId);
+    if (ImGui::TreeNodeEx(label.c_str(), flags)) {
+        for (const auto& childIdx : children) {
+            updateSkeletonDisplayUI(skeleton, childIdx);
+        }
+        ImGui::TreePop();
+    }
+    ImGui::PopID();
+}
+
+void updateSkeletonDisplayUI(const Skeleton& skeleton)
+{
+    updateSkeletonDisplayUI(skeleton, ROOT_JOINT_ID);
+}
+}
+
 void Game::updateDevTools(float dt)
 {
     if (displayFPSDelay > 0.f) {
@@ -1244,7 +1286,32 @@ void Game::updateDevTools(float dt)
     }
     ImGui::End();
 
-    // ImGui::ShowDemoWindow();
+    ImGui::Begin("Animation");
+    {
+        auto& e = findEntityByName("Cato");
+        if (ImGui::BeginCombo("Animation", e.skeletonAnimator.getCurrentAnimationName().c_str())) {
+            for (const auto& [an, a] : e.animations) {
+                if (ImGui::Selectable(an.c_str())) {
+                    e.skeletonAnimator.setAnimation(e.skeleton, a);
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::Text("duration = %.2f", e.skeletonAnimator.getAnimation()->duration);
+
+        float timeNormalized = e.skeletonAnimator.getNormalizedProgress();
+        if (ImGui::SliderFloat("time", &timeNormalized, 0.f, 1.f)) {
+            e.skeletonAnimator.setNormalizedProgress(timeNormalized);
+        }
+
+        if (ImGui::CollapsingHeader("Skeleton")) {
+            updateSkeletonDisplayUI(e.skeleton);
+        }
+    }
+
+    ImGui::End();
+
+    ImGui::ShowDemoWindow();
 }
 
 void Game::render()

@@ -20,6 +20,9 @@ public:
 
     float getProgress() const { return time; }
 
+    void setNormalizedProgress(float t);
+    float getNormalizedProgress() const;
+
 private:
     void updateTransforms(Skeleton& skeleton);
 
@@ -28,7 +31,4 @@ private:
     const SkeletalAnimation* animation{nullptr};
 
     bool animationFinished{false};
-
-    bool firstFrame = true;
-    bool frameChanged{false};
 };

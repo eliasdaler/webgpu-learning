@@ -2,7 +2,6 @@
 
 #include <limits>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include <glm/mat4x4.hpp>
@@ -30,7 +29,7 @@ struct Skeleton {
     std::vector<JointNode> hierarchy;
     std::vector<glm::mat4> jointMatrices;
 
-    std::unordered_map<JointId, std::string> jointNames;
+    std::vector<std::string> jointNames;
 
 private:
     void updateTransforms(JointId id, const glm::mat4& parentWorldMatrix);

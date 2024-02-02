@@ -3,6 +3,8 @@
 #include <Graphics/SkeletalAnimation.h>
 #include <Graphics/Skeleton.h>
 
+#include <tuple>
+
 #include <glm/gtx/compatibility.hpp> // lerp for vec3
 
 namespace
@@ -16,7 +18,6 @@ void SkeletonAnimator::setAnimation(Skeleton& skeleton, const SkeletalAnimation&
         return; // TODO: allow to reset animation
     }
     time = 0.f;
-    frameChanged = false; // ideally should be "true", but update will override it
     animationFinished = false;
     this->animation = &animation;
     updateTransforms(skeleton);
@@ -48,13 +49,17 @@ const std::string& SkeletonAnimator::getCurrentAnimationName() const
 
 namespace
 {
+
 std::tuple<std::size_t, std::size_t, float> findPrevNextKeys(
     std::size_t numKeys,
     float time,
     float animationDuration)
 {
-    std::size_t prevKey = std::min((std::size_t)std::floor(time * ANIMATION_FPS), numKeys - 1);
-    std::size_t nextKey = std::min(prevKey + 1, numKeys - 1);
+    // keys are sampled by ANIMATION_FPS, so finding prev/next key is easy
+    const std::size_t prevKey =
+        std::min((std::size_t)std::floor(time * ANIMATION_FPS), numKeys - 1);
+    const std::size_t nextKey = std::min(prevKey + 1, numKeys - 1);
+
     float t = 0.0f;
     if (prevKey != nextKey) {
         t = time * ANIMATION_FPS - (float)prevKey;
@@ -115,4 +120,18 @@ void SkeletonAnimator::updateTransforms(Skeleton& skeleton)
 {
     skeletonAnimate(skeleton, ROOT_JOINT_ID, *animation, time);
     skeleton.updateTransforms();
+}
+
+void SkeletonAnimator::setNormalizedProgress(float t)
+{
+    assert(t >= 0.f && t <= 1.f);
+    time = t * animation->duration;
+}
+
+float SkeletonAnimator::getNormalizedProgress() const
+{
+    if (!animation) {
+        return 0.f;
+    }
+    return time / animation->duration;
 }
