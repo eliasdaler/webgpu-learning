@@ -55,17 +55,14 @@ const std::string& SkeletonAnimator::getCurrentAnimationName() const
 namespace
 {
 
-std::tuple<std::size_t, std::size_t, float> findPrevNextKeys(
-    std::size_t numKeys,
-    float time,
-    float animationDuration)
+std::tuple<std::size_t, std::size_t, float> findPrevNextKeys(std::size_t numKeys, float time)
 {
     // keys are sampled by ANIMATION_FPS, so finding prev/next key is easy
     const std::size_t prevKey =
         std::min((std::size_t)std::floor(time * ANIMATION_FPS), numKeys - 1);
     const std::size_t nextKey = std::min(prevKey + 1, numKeys - 1);
 
-    float t = 0.0f;
+    float t{0.f};
     if (prevKey != nextKey) {
         t = time * ANIMATION_FPS - (float)prevKey;
     }
@@ -73,37 +70,46 @@ std::tuple<std::size_t, std::size_t, float> findPrevNextKeys(
     return {prevKey, nextKey, t};
 }
 
-Transform sampleAnimation(const SkeletalAnimation& animation, JointId jointId, float time)
+glm::mat4 sampleAnimation(const SkeletalAnimation& animation, JointId jointId, float time)
 {
-    Transform transform{};
+    static const auto I = glm::mat4{1.f};
+
+    const auto& ts = animation.tracks[jointId];
+
+    auto tm = I;
 
     { // translation
-        const auto& tc = animation.translationChannels[jointId];
-        if (!tc.translations.empty()) {
-            const auto [p, n, t] =
-                findPrevNextKeys(tc.translations.size(), time, animation.duration);
-            transform.position = glm::lerp(tc.translations[p], tc.translations[n], t);
+        const auto& tc = ts.translations;
+        if (!tc.empty()) {
+            const auto [p, n, t] = findPrevNextKeys(tc.size(), time);
+            const auto pos = glm::lerp(tc[p], tc[n], t);
+            tm[3] = glm::vec4(pos, 1.f);
         }
     }
 
     { // rotation
-        const auto& rc = animation.rotationChannels[jointId];
-        if (!rc.rotations.empty()) {
-            const auto [p, n, t] = findPrevNextKeys(rc.rotations.size(), time, animation.duration);
+        const auto& rc = ts.rotations;
+        if (!rc.empty()) {
+            const auto [p, n, t] = findPrevNextKeys(rc.size(), time);
             // slerp is slower, lerp is good enough
-            transform.heading = glm::lerp(rc.rotations[p], rc.rotations[n], t);
+            const auto rot = glm::lerp(rc[p], rc[n], t);
+            tm *= glm::mat4_cast(rot);
         }
     }
+
+    // TODO: one more potential optimization: if there's no scaling in animation,
+    // we can skip this calculating scale
 
     { // scale
-        const auto& sc = animation.scaleChannels[jointId];
-        if (!sc.scales.empty()) {
-            const auto [p, n, t] = findPrevNextKeys(sc.scales.size(), time, animation.duration);
-            transform.scale = glm::lerp(sc.scales[p], sc.scales[n], t);
+        const auto& sc = ts.scales;
+        if (!sc.empty()) {
+            const auto [p, n, t] = findPrevNextKeys(sc.size(), time);
+            const auto scale = glm::lerp(sc[p], sc[n], t);
+            tm = glm::scale(tm, scale);
         }
     }
 
-    return transform;
+    return tm;
 }
 
 } // end of anonymous namespace
@@ -122,11 +128,11 @@ void SkeletonAnimator::calculateJointMatrix(
     const glm::mat4& parentTransform)
 {
     const auto localTransform = sampleAnimation(animation, jointId, time);
-    const auto globalJointTransform = parentTransform * localTransform.asMatrix();
-    jointMatrices[jointId] = globalJointTransform * skeleton.inverseBindMatrices[jointId];
+    const auto modelTransform = parentTransform * localTransform;
+    jointMatrices[jointId] = modelTransform * skeleton.inverseBindMatrices[jointId];
 
     for (const auto childIdx : skeleton.hierarchy[jointId].children) {
-        calculateJointMatrix(skeleton, childIdx, animation, time, globalJointTransform);
+        calculateJointMatrix(skeleton, childIdx, animation, time, modelTransform);
     }
 }
 

@@ -463,9 +463,7 @@ std::unordered_map<std::string, SkeletalAnimation> loadAnimations(
 
         const auto numJoints = skeleton.joints.size();
 
-        animation.translationChannels.resize(numJoints);
-        animation.rotationChannels.resize(numJoints);
-        animation.scaleChannels.resize(numJoints);
+        animation.tracks.resize(numJoints);
 
         for (const auto& channel : gltfAnimation.channels) {
             const auto& sampler = gltfAnimation.samplers[channel.sampler];
@@ -494,7 +492,7 @@ std::unordered_map<std::string, SkeletalAnimation> loadAnimations(
                 const auto translationKeys =
                     getPackedBufferSpan<glm::vec3>(gltfModel, outputAccessor);
 
-                auto& tc = animation.translationChannels[jointId].translations;
+                auto& tc = animation.tracks[jointId].translations;
                 if (translationKeys.size() == 2 && translationKeys[0] == translationKeys[1]) {
                     tc.push_back(translationKeys[0]);
                 } else {
@@ -509,7 +507,7 @@ std::unordered_map<std::string, SkeletalAnimation> loadAnimations(
 
             } else if (channel.target_path == GLTF_SAMPLER_PATH_ROTATION) {
                 const auto rotationKeys = getPackedBufferSpan<glm::vec4>(gltfModel, outputAccessor);
-                auto& rc = animation.rotationChannels[jointId].rotations;
+                auto& rc = animation.tracks[jointId].rotations;
                 if (rotationKeys.size() == 2 && rotationKeys[0] == rotationKeys[1]) {
                     const auto& qv = rotationKeys[0];
                     const glm::quat q{qv.w, qv.x, qv.y, qv.z};
@@ -525,7 +523,7 @@ std::unordered_map<std::string, SkeletalAnimation> loadAnimations(
                 const auto scaleKeys =
                     getPackedBufferSpan<const glm::vec3>(gltfModel, outputAccessor);
 
-                auto& sc = animation.scaleChannels[jointId].scales;
+                auto& sc = animation.tracks[jointId].scales;
                 if (scaleKeys.size() == 2 && scaleKeys[0] == scaleKeys[1]) {
                     sc.push_back(scaleKeys[0]);
                 } else {
