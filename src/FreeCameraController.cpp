@@ -17,16 +17,17 @@ void FreeCameraController::handleInput(const Camera& camera)
     glm::vec3 moveVector{};
     moveVector += camFront * (-moveStickState.y);
     moveVector += camRight * moveStickState.x;
-    moveVelocity = moveVector * moveSpeed;
-    if (util::isKeyPressed(SDL_SCANCODE_LSHIFT)) {
-        moveVelocity *= 2.f;
-    }
 
     if (util::isKeyPressed(SDL_SCANCODE_Q)) {
         moveVector -= math::GlobalUpAxis / 2.f;
     }
     if (util::isKeyPressed(SDL_SCANCODE_E)) {
         moveVector += math::GlobalUpAxis / 2.f;
+    }
+
+    moveVelocity = moveVector * moveSpeed;
+    if (util::isKeyPressed(SDL_SCANCODE_LSHIFT)) {
+        moveVelocity *= 2.f;
     }
 
     const auto rotateStickState = util::getStickState({

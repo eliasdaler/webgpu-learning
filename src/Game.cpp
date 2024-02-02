@@ -432,14 +432,15 @@ void Game::init()
     const auto yaeScene = loadScene("assets/models/yae.gltf");
     createEntitiesFromScene(yaeScene);
 
-    const auto cityScene = loadScene("assets/levels/city/city.gltf");
-    createEntitiesFromScene(cityScene);
+    // const auto levelScene = loadScene("assets/levels/city/city.gltf");
+    const auto levelScene = loadScene("assets/levels/house/house.gltf");
+    createEntitiesFromScene(levelScene);
 
-    const glm::vec3 yaePos{1.4f, 0.f, 0.f};
+    const glm::vec3 yaePos{1.4f, 0.f, -2.f};
     auto& yae = findEntityByName("yae_mer");
     yae.transform.position = yaePos;
 
-    const glm::vec3 catoPos{0.f, 0.07f, 0.f};
+    const glm::vec3 catoPos{1.4f, 0.0f, 0.f};
     auto& cato = findEntityByName("Cato");
     cato.transform.position = catoPos;
 
@@ -1082,6 +1083,9 @@ void Game::initImGui()
         3,
         (WGPUTextureFormat)swapChainFormat,
         (WGPUTextureFormat)wgpu::TextureFormat::Undefined);
+
+    auto& io = ImGui::GetIO();
+    io.ConfigWindowsMoveFromTitleBarOnly = true;
 }
 
 void Game::loop()
@@ -1191,6 +1195,7 @@ void Game::Entity::uploadJointMatricesToGPU(
     const wgpu::Queue& queue,
     const std::vector<glm::mat4>& jointMatrices) const
 {
+    assert(jointMatrices.size() == skeleton.joints.size());
     queue.WriteBuffer(
         jointMatricesDataBuffer, 0, jointMatrices.data(), sizeof(glm::mat4) * jointMatrices.size());
 }

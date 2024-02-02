@@ -10,6 +10,7 @@
 namespace
 {
 static const int ANIMATION_FPS = 30;
+static const glm::mat4 I{1.f};
 }
 
 void SkeletonAnimator::setAnimation(const Skeleton& skeleton, const SkeletalAnimation& animation)
@@ -23,6 +24,7 @@ void SkeletonAnimator::setAnimation(const Skeleton& skeleton, const SkeletalAnim
     time = 0.f;
     animationFinished = false;
     this->animation = &animation;
+
     calculateJointMatrices(skeleton);
 }
 
@@ -42,8 +44,7 @@ void SkeletonAnimator::update(const Skeleton& skeleton, float dt)
         }
     }
 
-    static const glm::mat4 I{1.f};
-    calculateJointMatrix(skeleton, ROOT_JOINT_ID, *animation, time, I);
+    calculateJointMatrices(skeleton);
 }
 
 const std::string& SkeletonAnimator::getCurrentAnimationName() const
@@ -72,8 +73,6 @@ std::tuple<std::size_t, std::size_t, float> findPrevNextKeys(std::size_t numKeys
 
 glm::mat4 sampleAnimation(const SkeletalAnimation& animation, JointId jointId, float time)
 {
-    static const auto I = glm::mat4{1.f};
-
     const auto& ts = animation.tracks[jointId];
 
     auto tm = I;
@@ -97,8 +96,8 @@ glm::mat4 sampleAnimation(const SkeletalAnimation& animation, JointId jointId, f
         }
     }
 
-    // TODO: one more potential optimization: if there's no scaling in animation,
-    // we can skip this calculating scale
+    // TODO: one more potential optimization: if there's no scaling in
+    // animation, we can skip this calculating the scale.
 
     { // scale
         const auto& sc = ts.scales;
