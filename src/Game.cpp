@@ -219,30 +219,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     var uv_c = in.uv;
     uv_c.y = 1 - uv_c.y;
 
-    let textureColor = textureSample(texture, texSampler, uv_c).rgb;
-    let color = pow(textureColor, vec3(1/2.2f));
+    let textureColor = textureSample(texture, texSampler, uv_c).rgba;
+    if (textureColor.a < 0.01) {
+        discard;
+    }
+
+    let color = pow(textureColor.rgb, vec3(1/2.2f));
     return vec4f(color, 1.0);
 }
 )";
-
-/* clang-format off */
-std::vector<float> pointData = {
-    // x,   y,   u,   v,
-    -0.5, -0.5, 0.0, 0.0,
-    +0.5, -0.5, 1.0, 0.0,
-    +0.5, +0.5, 1.0, 1.0,
-    -0.5, +0.5, 0.0, 1.0,
-};
-/* clang-format on */
-
-std::vector<std::uint16_t> indexData = {
-    0,
-    1,
-    2, // Triangle #0
-    2,
-    3,
-    0, // Triangle #1
-};
 
 } // end of anonymous namespace
 
@@ -445,7 +430,7 @@ void Game::init()
     cato.transform.position = catoPos;
 
     createSpriteDrawingPipeline();
-    createSprite();
+    createSprite(sprite, "assets/textures/tree.png");
 
     initImGui();
 }
@@ -1002,12 +987,27 @@ void Game::createSpriteDrawingPipeline()
     }
 }
 
-void Game::createSprite()
+void Game::createSprite(Sprite& sprite, const std::filesystem::path& texturePath)
 {
-    spriteTexture = util::loadTexture(
-        device, queue, "assets/textures/shinji.png", wgpu::TextureFormat::RGBA8UnormSrgb);
+    /* clang-format off */
+    static std::array<float, 16> pointData = {
+        // x,   y,   u,   v,
+        -0.5, -0.5, 0.0, 0.0,
+        +0.5, -0.5, 1.0, 0.0,
+        +0.5, +0.5, 1.0, 1.0,
+        -0.5, +0.5, 0.0, 1.0,
+    };
 
-    {
+    static std::array<std::uint16_t, 6> indexData = {
+        0, 1, 2, // Triangle #0
+        2, 3, 0, // Triangle #1
+    };
+    /* clang-format on */
+
+    sprite.texture =
+        util::loadTexture(device, queue, texturePath, wgpu::TextureFormat::RGBA8UnormSrgb);
+
+    { // bind group
         const auto textureViewDesc = wgpu::TextureViewDescriptor{
             .format = wgpu::TextureFormat::RGBA8UnormSrgb,
             .dimension = wgpu::TextureViewDimension::e2D,
@@ -1017,7 +1017,7 @@ void Game::createSprite()
             .arrayLayerCount = 1,
             .aspect = wgpu::TextureAspect::All,
         };
-        const auto textureView = spriteTexture.CreateView(&textureViewDesc);
+        const auto textureView = sprite.texture.CreateView(&textureViewDesc);
 
         const std::array<wgpu::BindGroupEntry, 2> bindings{
             {{
@@ -1034,7 +1034,7 @@ void Game::createSprite()
             .entries = bindings.data(),
         };
 
-        spriteBindGroup = device.CreateBindGroup(&bindGroupDesc);
+        sprite.bindGroup = device.CreateBindGroup(&bindGroupDesc);
     }
 
     { // vertex buffer
@@ -1043,9 +1043,9 @@ void Game::createSprite()
             .size = pointData.size() * sizeof(float),
         };
 
-        spriteVertexBuffer = device.CreateBuffer(&bufferDesc);
+        sprite.vertexBuffer = device.CreateBuffer(&bufferDesc);
 
-        queue.WriteBuffer(spriteVertexBuffer, 0, pointData.data(), bufferDesc.size);
+        queue.WriteBuffer(sprite.vertexBuffer, 0, pointData.data(), bufferDesc.size);
     }
 
     { // index buffer
@@ -1054,9 +1054,9 @@ void Game::createSprite()
             .size = indexData.size() * sizeof(std::uint16_t),
         };
 
-        spriteIndexBuffer = device.CreateBuffer(&bufferDesc);
+        sprite.indexBuffer = device.CreateBuffer(&bufferDesc);
 
-        queue.WriteBuffer(spriteIndexBuffer, 0, indexData.data(), bufferDesc.size);
+        queue.WriteBuffer(sprite.indexBuffer, 0, indexData.data(), bufferDesc.size);
     }
 }
 
@@ -1335,43 +1335,12 @@ void Game::render()
 
     const auto commandEncoderDesc = wgpu::CommandEncoderDescriptor{};
     const auto encoder = device.CreateCommandEncoder(&commandEncoderDesc);
-
-    { // BG
+    { // draw meshes
         const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
             .view = nextFrameTexture,
             .loadOp = wgpu::LoadOp::Clear,
             .storeOp = wgpu::StoreOp::Store,
             .clearValue = clearColor,
-        };
-
-        const auto renderPassDesc = wgpu::RenderPassDescriptor{
-            .colorAttachmentCount = 1,
-            .colorAttachments = &mainScreenAttachment,
-        };
-
-        const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
-        renderPass.PushDebugGroup("Draw BG");
-
-#if 0
-        { // draw sprites
-            renderPass.SetPipeline(spritePipeline);
-            renderPass.SetBindGroup(0, spriteBindGroup, 0, nullptr);
-            renderPass.SetVertexBuffer(0, spriteVertexBuffer, 0, wgpu::kWholeSize);
-            renderPass
-                .SetIndexBuffer(spriteIndexBuffer, wgpu::IndexFormat::Uint16, 0, wgpu::kWholeSize);
-            renderPass.DrawIndexed(spriteIndexBuffer.GetSize() / sizeof(std::uint16_t), 1, 0, 0, 0);
-        }
-#endif
-
-        renderPass.PopDebugGroup();
-        renderPass.End();
-    }
-
-    { // draw meshes
-        const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
-            .view = nextFrameTexture,
-            .loadOp = wgpu::LoadOp::Load,
-            .storeOp = wgpu::StoreOp::Store,
         };
 
         const auto depthStencilAttachment = wgpu::RenderPassDepthStencilAttachment{
@@ -1396,7 +1365,7 @@ void Game::render()
             renderPass.PushDebugGroup("Draw meshes");
 
             renderPass.SetPipeline(meshPipeline);
-            renderPass.SetBindGroup(0, perFrameBindGroup, 0);
+            renderPass.SetBindGroup(0, perFrameBindGroup);
 
             auto prevMaterialIdx = NULL_MATERIAL_ID;
             auto prevMeshId = NULL_MESH_ID;
@@ -1407,10 +1376,10 @@ void Game::render()
                 if (dc.materialIdx != prevMaterialIdx) {
                     prevMaterialIdx = dc.materialIdx;
                     const auto& material = materialCache.getMaterial(dc.materialIdx);
-                    renderPass.SetBindGroup(1, material.bindGroup, 0);
+                    renderPass.SetBindGroup(1, material.bindGroup);
                 }
 
-                renderPass.SetBindGroup(2, dc.meshBindGroup, 0);
+                renderPass.SetBindGroup(2, dc.meshBindGroup);
 
                 if (dc.meshId != prevMeshId) {
                     prevMeshId = dc.meshId;
@@ -1425,6 +1394,37 @@ void Game::render()
             renderPass.PopDebugGroup();
             renderPass.End();
         }
+    }
+
+    { // sprite
+        const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
+            .view = nextFrameTexture,
+            .loadOp = wgpu::LoadOp::Load,
+            .storeOp = wgpu::StoreOp::Store,
+        };
+
+        const auto renderPassDesc = wgpu::RenderPassDescriptor{
+            .colorAttachmentCount = 1,
+            .colorAttachments = &mainScreenAttachment,
+        };
+
+        const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
+        renderPass.PushDebugGroup("Draw sprites");
+
+        renderPass.SetPipeline(spritePipeline);
+
+        { // draw sprites
+
+            renderPass.SetBindGroup(0, sprite.bindGroup);
+            renderPass.SetVertexBuffer(0, sprite.vertexBuffer, 0, wgpu::kWholeSize);
+            renderPass
+                .SetIndexBuffer(sprite.indexBuffer, wgpu::IndexFormat::Uint16, 0, wgpu::kWholeSize);
+            renderPass
+                .DrawIndexed(sprite.indexBuffer.GetSize() / sizeof(std::uint16_t), 1, 0, 0, 0);
+        }
+
+        renderPass.PopDebugGroup();
+        renderPass.End();
     }
 
     { // Dear ImGui

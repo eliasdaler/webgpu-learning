@@ -82,7 +82,6 @@ private:
     void initSceneData();
     void createMeshDrawingPipeline();
     void createSpriteDrawingPipeline();
-    void createSprite();
     void initImGui();
 
     void loop();
@@ -151,10 +150,15 @@ private:
     wgpu::BindGroupLayout spriteBindGroupLayout;
     wgpu::RenderPipeline spritePipeline;
 
-    wgpu::BindGroup spriteBindGroup;
-    wgpu::Buffer spriteVertexBuffer;
-    wgpu::Buffer spriteIndexBuffer;
-    wgpu::Texture spriteTexture;
+    struct Sprite {
+        wgpu::Buffer vertexBuffer;
+        wgpu::Buffer indexBuffer;
+        wgpu::Texture texture;
+        wgpu::BindGroup bindGroup;
+    };
+    void createSprite(Sprite& sprite, const std::filesystem::path& texturePath);
+
+    Sprite sprite;
 
     Camera camera;
     FreeCameraController cameraController;
