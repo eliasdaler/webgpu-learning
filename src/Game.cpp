@@ -192,9 +192,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 )";
 
 const char* spriteShaderSource = R"(
-struct VertexInput {
-    @location(0) position: vec2f,
-    @location(1) uv: vec2f,
+struct SpriteVertex {
+    positionAndUV: vec4f,
 };
 
 struct VertexOutput {
@@ -202,14 +201,18 @@ struct VertexOutput {
     @location(0) uv: vec2f,
 };
 
-@group(0) @binding(0) var texture: texture_2d<f32>;
-@group(0) @binding(1) var texSampler: sampler;
+@group(0) @binding(0) var<storage, read> vertices: array<SpriteVertex>;
+@group(0) @binding(1) var texture: texture_2d<f32>;
+@group(0) @binding(2) var texSampler: sampler;
 
 @vertex
-fn vs_main(in: VertexInput) -> VertexOutput {
+fn vs_main(
+    @builtin(vertex_index) vertexIndex : u32) -> VertexOutput {
+    let vertex = vertices[vertexIndex];
+
     var out: VertexOutput;
-    out.position = vec4f(in.position, 0.0, 1.0);
-    out.uv = in.uv;
+    out.position = vec4f(vertex.positionAndUV.xy, 0.0, 1.0);
+    out.uv = vertex.positionAndUV.zw;
     return out;
 }
 
@@ -306,7 +309,7 @@ void Game::init()
 
     // change to false if something is broken
     // but otherwise, it improves debug performance 2x
-    static const bool unsafeMode = true;
+    static const bool unsafeMode = false;
     if (unsafeMode) {
         enabledToggles.push_back("skip_validation");
     }
@@ -883,9 +886,17 @@ void Game::createSpriteDrawingPipeline()
         spriteShaderModule.GetCompilationInfo(defaultCompilationCallback, (void*)"sprite");
     }
 
-    const std::array<wgpu::BindGroupLayoutEntry, 2> bindingLayoutEntries{{
+    const std::array<wgpu::BindGroupLayoutEntry, 3> bindingLayoutEntries{{
         {
             .binding = 0,
+            .visibility = wgpu::ShaderStage::Vertex,
+            .buffer =
+                {
+                    .type = wgpu::BufferBindingType::ReadOnlyStorage,
+                },
+        },
+        {
+            .binding = 1,
             .visibility = wgpu::ShaderStage::Fragment,
             .texture =
                 {
@@ -894,7 +905,7 @@ void Game::createSpriteDrawingPipeline()
                 },
         },
         {
-            .binding = 1,
+            .binding = 2,
             .visibility = wgpu::ShaderStage::Fragment,
             .sampler =
                 {
@@ -925,34 +936,10 @@ void Game::createSpriteDrawingPipeline()
                 },
         };
 
-        // vertex
-        const std::array<wgpu::VertexAttribute, 2> vertexAttribs{{
-            {
-                // position
-                .format = wgpu::VertexFormat::Float32x2,
-                .offset = 0,
-                .shaderLocation = 0,
-            },
-            {
-                // uv
-                .format = wgpu::VertexFormat::Float32x2,
-                .offset = 2 * sizeof(float),
-                .shaderLocation = 1,
-            },
-        }};
-
-        const auto vertexBufferLayout = wgpu::VertexBufferLayout{
-            .arrayStride = 4 * sizeof(float),
-            .stepMode = wgpu::VertexStepMode::Vertex,
-            .attributeCount = static_cast<std::size_t>(vertexAttribs.size()),
-            .attributes = vertexAttribs.data(),
-        };
-
         pipelineDesc.vertex = wgpu::VertexState{
             .module = spriteShaderModule,
             .entryPoint = "vs_main",
-            .bufferCount = 1,
-            .buffers = &vertexBufferLayout,
+            .bufferCount = 0,
         };
 
         // fragment
@@ -1011,39 +998,9 @@ void Game::createSprite(Sprite& sprite, const std::filesystem::path& texturePath
     sprite.texture =
         util::loadTexture(device, queue, texturePath, wgpu::TextureFormat::RGBA8UnormSrgb);
 
-    { // bind group
-        const auto textureViewDesc = wgpu::TextureViewDescriptor{
-            .format = wgpu::TextureFormat::RGBA8UnormSrgb,
-            .dimension = wgpu::TextureViewDimension::e2D,
-            .baseMipLevel = 0,
-            .mipLevelCount = 1,
-            .baseArrayLayer = 0,
-            .arrayLayerCount = 1,
-            .aspect = wgpu::TextureAspect::All,
-        };
-        const auto textureView = sprite.texture.CreateView(&textureViewDesc);
-
-        const std::array<wgpu::BindGroupEntry, 2> bindings{
-            {{
-                 .binding = 0,
-                 .textureView = textureView,
-             },
-             {
-                 .binding = 1,
-                 .sampler = nearestSampler,
-             }}};
-        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
-            .layout = spriteBindGroupLayout.Get(),
-            .entryCount = bindings.size(),
-            .entries = bindings.data(),
-        };
-
-        sprite.bindGroup = device.CreateBindGroup(&bindGroupDesc);
-    }
-
     { // vertex buffer
         const wgpu::BufferDescriptor bufferDesc{
-            .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Vertex,
+            .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Storage,
             .size = pointData.size() * sizeof(SpriteVertex),
         };
 
@@ -1061,6 +1018,41 @@ void Game::createSprite(Sprite& sprite, const std::filesystem::path& texturePath
         sprite.indexBuffer = device.CreateBuffer(&bufferDesc);
 
         queue.WriteBuffer(sprite.indexBuffer, 0, indexData.data(), bufferDesc.size);
+    }
+
+    { // bind group
+        const auto textureViewDesc = wgpu::TextureViewDescriptor{
+            .format = wgpu::TextureFormat::RGBA8UnormSrgb,
+            .dimension = wgpu::TextureViewDimension::e2D,
+            .baseMipLevel = 0,
+            .mipLevelCount = 1,
+            .baseArrayLayer = 0,
+            .arrayLayerCount = 1,
+            .aspect = wgpu::TextureAspect::All,
+        };
+        const auto textureView = sprite.texture.CreateView(&textureViewDesc);
+
+        const std::array<wgpu::BindGroupEntry, 3> bindings{{
+            {
+                .binding = 0,
+                .buffer = sprite.vertexBuffer,
+            },
+            {
+                .binding = 1,
+                .textureView = textureView,
+            },
+            {
+                .binding = 2,
+                .sampler = nearestSampler,
+            },
+        }};
+        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .layout = spriteBindGroupLayout.Get(),
+            .entryCount = bindings.size(),
+            .entries = bindings.data(),
+        };
+
+        sprite.bindGroup = device.CreateBindGroup(&bindGroupDesc);
     }
 }
 
@@ -1421,7 +1413,6 @@ void Game::render()
         { // draw sprites
 
             renderPass.SetBindGroup(0, sprite.bindGroup);
-            renderPass.SetVertexBuffer(0, sprite.vertexBuffer, 0, wgpu::kWholeSize);
             renderPass
                 .SetIndexBuffer(sprite.indexBuffer, wgpu::IndexFormat::Uint16, 0, wgpu::kWholeSize);
             renderPass
