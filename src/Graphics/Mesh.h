@@ -16,8 +16,11 @@ struct Mesh {
 
     struct Vertex {
         glm::vec3 pos;
-        glm::vec2 uv;
+        float uv_x;
+
         glm::vec3 normal;
+        float uv_y;
+
         glm::vec4 tangent;
 
         std::array<JointId, MAX_BONE_INFLUENCE>
@@ -25,6 +28,7 @@ struct Mesh {
         std::array<float, MAX_BONE_INFLUENCE> weights{};
     };
     static_assert(sizeof(Mesh::Vertex) % 4 == 0);
+    static_assert(alignof(glm::vec3) == 4);
 
     std::vector<Vertex> vertices;
     std::vector<std::uint16_t> indices;

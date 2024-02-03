@@ -76,14 +76,15 @@ void defaultCompilationCallback(
 }
 
 const char* shaderSource = R"(
-struct VertexInput {
-    @location(0) position: vec3f,
-    @location(1) uv: vec2f,
-    @location(2) normal: vec3f,
-    @location(3) tangent: vec4f,
+struct Vertex {
+    position: vec3f,
+    uv_x: f32,
+    normal: vec3f,
+    uv_y: f32,
+    tangent: vec4f,
 
-    @location(4) jointIds: vec4u,
-    @location(5) weights: vec4f,
+    jointIds: vec4u,
+    weights: vec4f,
 };
 
 struct VertexOutput {
@@ -110,29 +111,32 @@ struct MeshData {
     model: mat4x4f,
 };
 
-@group(2) @binding(0) var<uniform> mesh: MeshData;
-@group(2) @binding(1) var<uniform> jointMatrices: array<mat4x4f, 256>;
+@group(2) @binding(0) var<storage, read> vertices: array<Vertex>;
+@group(2) @binding(1) var<uniform> meshData: MeshData;
+@group(2) @binding(2) var<uniform> jointMatrices: array<mat4x4f, 256>;
 
 @vertex
-fn vs_main(in: VertexInput) -> VertexOutput {
+fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+    let v = vertices[vertexIndex];
+
     var out: VertexOutput;
 
     var worldPos = vec4(0.0);
-    if (any(in.weights != vec4(0.0))) {
+    if (any(v.weights != vec4(0.0))) {
         let skinMatrix =
-            in.weights.x * jointMatrices[in.jointIds.x] +
-            in.weights.y * jointMatrices[in.jointIds.y] +
-            in.weights.z * jointMatrices[in.jointIds.z] +
-            in.weights.w * jointMatrices[in.jointIds.w];
-        worldPos = mesh.model * skinMatrix * vec4(in.position, 1.0);
+            v.weights.x * jointMatrices[v.jointIds.x] +
+            v.weights.y * jointMatrices[v.jointIds.y] +
+            v.weights.z * jointMatrices[v.jointIds.z] +
+            v.weights.w * jointMatrices[v.jointIds.w];
+        worldPos = meshData.model * skinMatrix * vec4(v.position, 1.0);
     } else {
-        worldPos = mesh.model * vec4(in.position, 1.0);
+        worldPos = meshData.model * vec4(v.position, 1.0);
     }
 
     out.position = fd.viewProj * worldPos;
     out.pos = worldPos.xyz;
-    out.uv = in.uv;
-    out.normal = (vec4(in.normal, 1.0)).xyz;
+    out.uv = vec2(v.uv_x,v.uv_y);
+    out.normal = (vec4(v.normal, 1.0)).xyz;
 
     return out;
 }
@@ -309,7 +313,7 @@ void Game::init()
 
     // change to false if something is broken
     // but otherwise, it improves debug performance 2x
-    static const bool unsafeMode = false;
+    static const bool unsafeMode = true;
     if (unsafeMode) {
         enabledToggles.push_back("skip_validation");
     }
@@ -592,9 +596,17 @@ void Game::createMeshDrawingPipeline()
     }
 
     { // mesh data layout
-        const std::array<wgpu::BindGroupLayoutEntry, 2> bindGroupLayoutEntries{{
+        const std::array<wgpu::BindGroupLayoutEntry, 3> bindGroupLayoutEntries{{
             {
                 .binding = 0,
+                .visibility = wgpu::ShaderStage::Vertex,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::ReadOnlyStorage,
+                    },
+            },
+            {
+                .binding = 1,
                 .visibility = wgpu::ShaderStage::Vertex,
                 .buffer =
                     {
@@ -602,7 +614,7 @@ void Game::createMeshDrawingPipeline()
                     },
             },
             {
-                .binding = 1,
+                .binding = 2,
                 .visibility = wgpu::ShaderStage::Vertex,
                 .buffer =
                     {
@@ -647,58 +659,10 @@ void Game::createMeshDrawingPipeline()
 
         pipelineDesc.depthStencil = &depthStencilState;
 
-        // vertex
-        const std::array<wgpu::VertexAttribute, 6> vertexAttribs{{
-            {
-                // position
-                .format = wgpu::VertexFormat::Float32x3,
-                .offset = 0,
-                .shaderLocation = 0,
-            },
-            {
-                // uv
-                .format = wgpu::VertexFormat::Float32x2,
-                .offset = offsetof(Mesh::Vertex, uv),
-                .shaderLocation = 1,
-            },
-            {
-                // normal
-                .format = wgpu::VertexFormat::Float32x3,
-                .offset = offsetof(Mesh::Vertex, normal),
-                .shaderLocation = 2,
-            },
-            {
-                // tangent
-                .format = wgpu::VertexFormat::Float32x4,
-                .offset = offsetof(Mesh::Vertex, tangent),
-                .shaderLocation = 3,
-            },
-            {
-                // jointIds
-                .format = wgpu::VertexFormat::Uint32x4,
-                .offset = offsetof(Mesh::Vertex, jointIds),
-                .shaderLocation = 4,
-            },
-            {
-                // weights
-                .format = wgpu::VertexFormat::Float32x4,
-                .offset = offsetof(Mesh::Vertex, weights),
-                .shaderLocation = 5,
-            },
-        }};
-
-        const auto vertexBufferLayout = wgpu::VertexBufferLayout{
-            .arrayStride = sizeof(Mesh::Vertex),
-            .stepMode = wgpu::VertexStepMode::Vertex,
-            .attributeCount = static_cast<std::size_t>(vertexAttribs.size()),
-            .attributes = vertexAttribs.data(),
-        };
-
         pipelineDesc.vertex = wgpu::VertexState{
             .module = meshShaderModule,
             .entryPoint = "vs_main",
-            .bufferCount = 1,
-            .buffers = &vertexBufferLayout,
+            .bufferCount = 0,
         };
 
         // fragment
@@ -794,7 +758,7 @@ Game::EntityId Game::createEntitiesFromNode(
         };
         queue.WriteBuffer(e.meshDataBuffer, 0, &md, sizeof(MeshData));
 
-        auto dataBuffer = identityJointMatricesDataBuffer;
+        auto jointMatricesDataBuffer = identityJointMatricesDataBuffer;
         { // skeleton
             if (node.skinId != -1) {
                 e.hasSkeleton = true;
@@ -805,7 +769,7 @@ Game::EntityId Game::createEntitiesFromNode(
                     .size = sizeof(glm::mat4) * 256,
                 };
                 e.jointMatricesDataBuffer = device.CreateBuffer(&bufferDesc);
-                dataBuffer = e.jointMatricesDataBuffer;
+                jointMatricesDataBuffer = e.jointMatricesDataBuffer;
 
                 // FIXME: this is bad - we need to have some sort of cache
                 // and not copy animations everywhere
@@ -818,23 +782,31 @@ Game::EntityId Game::createEntitiesFromNode(
         }
 
         { // mesh bind group
-            const std::array<wgpu::BindGroupEntry, 2> bindings{{
-                {
-                    .binding = 0,
-                    .buffer = e.meshDataBuffer,
-                },
-                {
-                    .binding = 1,
-                    .buffer = dataBuffer,
-                },
-            }};
-            const auto bindGroupDesc = wgpu::BindGroupDescriptor{
-                .layout = meshGroupLayout.Get(),
-                .entryCount = bindings.size(),
-                .entries = bindings.data(),
-            };
+            for (std::size_t i = 0; i < e.meshes.size(); ++i) {
+                auto& mesh = meshCache.getMesh(e.meshes[i]);
 
-            e.meshBindGroup = device.CreateBindGroup(&bindGroupDesc);
+                const std::array<wgpu::BindGroupEntry, 3> bindings{{
+                    {
+                        .binding = 0,
+                        .buffer = mesh.vertexBuffer,
+                    },
+                    {
+                        .binding = 1,
+                        .buffer = e.meshDataBuffer,
+                    },
+                    {
+                        .binding = 2,
+                        .buffer = jointMatricesDataBuffer,
+                    },
+                }};
+                const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+                    .layout = meshGroupLayout.Get(),
+                    .entryCount = bindings.size(),
+                    .entries = bindings.data(),
+                };
+
+                e.meshBindGroups.push_back(device.CreateBindGroup(&bindGroupDesc));
+            }
         }
     }
 
@@ -1369,9 +1341,9 @@ void Game::render()
             for (const auto& dcIdx : sortedDrawCommands) {
                 const auto& dc = drawCommands[dcIdx];
 
-                if (dc.materialIdx != prevMaterialIdx) {
-                    prevMaterialIdx = dc.materialIdx;
-                    const auto& material = materialCache.getMaterial(dc.materialIdx);
+                if (dc.mesh.materialId != prevMaterialIdx) {
+                    prevMaterialIdx = dc.mesh.materialId;
+                    const auto& material = materialCache.getMaterial(dc.mesh.materialId);
                     renderPass.SetBindGroup(1, material.bindGroup);
                 }
 
@@ -1379,7 +1351,6 @@ void Game::render()
 
                 if (dc.meshId != prevMeshId) {
                     prevMeshId = dc.meshId;
-                    renderPass.SetVertexBuffer(0, dc.mesh.vertexBuffer, 0, wgpu::kWholeSize);
                     renderPass.SetIndexBuffer(
                         dc.mesh.indexBuffer, wgpu::IndexFormat::Uint16, 0, wgpu::kWholeSize);
                 }
@@ -1392,7 +1363,7 @@ void Game::render()
         }
     }
 
-#if 1
+#if 0
     { // sprite
         const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
             .view = nextFrameTexture,
@@ -1465,16 +1436,14 @@ void Game::generateDrawList()
     for (const auto& ePtr : entities) {
         const auto& e = *ePtr;
 
-        for (const auto& meshId : e.meshes) {
-            const auto& mesh = meshCache.getMesh(meshId);
+        for (std::size_t meshIdx = 0; meshIdx < e.meshes.size(); ++meshIdx) {
+            const auto& mesh = meshCache.getMesh(e.meshes[meshIdx]);
             // TODO: draw frustum culling here
             const auto& material = materialCache.getMaterial(mesh.materialId);
             drawCommands.push_back(DrawCommand{
                 .mesh = mesh,
-                .meshBindGroup = e.meshBindGroup,
-                .materialIdx = mesh.materialId,
-                // TODO: better id for index buffers/meshes (when there's a global mesh cache)
-                .meshId = meshId,
+                .meshBindGroup = e.meshBindGroups[meshIdx],
+                .meshId = e.meshes[meshIdx],
             });
         }
     }
@@ -1494,10 +1463,10 @@ void Game::sortDrawList()
         [this](const auto& i1, const auto& i2) {
             const auto& dc1 = drawCommands[i1];
             const auto& dc2 = drawCommands[i2];
-            if (dc1.materialIdx == dc2.materialIdx) {
+            if (dc1.mesh.materialId == dc2.mesh.materialId) {
                 return dc1.meshId < dc2.meshId;
             }
-            return dc1.materialIdx < dc2.materialIdx;
+            return dc1.mesh.materialId < dc2.mesh.materialId;
         });
 }
 

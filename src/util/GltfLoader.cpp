@@ -197,7 +197,8 @@ void loadPrimitive(
         const auto uvs = getPackedBufferSpan<glm::vec2>(model, primitive, GLTF_UVS_ACCESSOR);
         assert(uvs.size() == mesh.vertices.size());
         for (std::size_t i = 0; i < uvs.size(); ++i) {
-            mesh.vertices[i].uv = uvs[i];
+            mesh.vertices[i].uv_x = uvs[i].x;
+            mesh.vertices[i].uv_y = uvs[i].y;
         }
     }
 
@@ -320,7 +321,7 @@ void loadGPUMesh(const util::LoadContext ctx, const Mesh& cpuMesh, GPUMesh& gpuM
 
     { // vertex buffer
         const auto bufferDesc = wgpu::BufferDescriptor{
-            .usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst,
+            .usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst,
             .size = cpuMesh.vertices.size() * sizeof(Mesh::Vertex),
         };
 

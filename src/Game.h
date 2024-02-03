@@ -47,8 +47,8 @@ public:
 
         // mesh (only one mesh per entity supported for now)
         std::vector<MeshId> meshes;
-        wgpu::Buffer meshDataBuffer;
-        wgpu::BindGroup meshBindGroup;
+        std::vector<wgpu::BindGroup> meshBindGroups;
+        wgpu::Buffer meshDataBuffer; // where model matrix is stored
 
         // skeleton
         Skeleton skeleton;
@@ -67,8 +67,6 @@ public:
     struct DrawCommand {
         const GPUMesh& mesh;
         wgpu::BindGroup meshBindGroup;
-
-        MaterialId materialIdx;
         std::size_t meshId;
     };
 
