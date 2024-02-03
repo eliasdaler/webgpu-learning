@@ -1,6 +1,6 @@
 # Learning WebGPU
 
-![skeletal_animation](screenshots/6_skeletal_animation.png)
+https://github.com/eliasdaler/webgpu-learning/assets/1285136/e2855490-6f60-46e4-be9c-5b3e61cf51ff
 
 ## Building
 
@@ -51,4 +51,6 @@ cmake --build .
 
 02.02.24 - skeletal animation
 
-![skeletal_animation](screenshots/6_skeletal_animation.png)
+https://github.com/eliasdaler/webgpu-learning/assets/1285136/e2855490-6f60-46e4-be9c-5b3e61cf51ff
+
+
