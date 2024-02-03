@@ -989,14 +989,18 @@ void Game::createSpriteDrawingPipeline()
 
 void Game::createSprite(Sprite& sprite, const std::filesystem::path& texturePath)
 {
-    /* clang-format off */
-    static std::array<float, 16> pointData = {
-        // x,   y,   u,   v,
-        -0.5, -0.5, 0.0, 0.0,
-        +0.5, -0.5, 1.0, 0.0,
-        +0.5, +0.5, 1.0, 1.0,
-        -0.5, +0.5, 0.0, 1.0,
+    struct SpriteVertex {
+        glm::vec2 pos;
+        glm::vec2 uv;
     };
+
+    /* clang-format off */
+    static std::array<SpriteVertex, 4> pointData{{
+        { .pos = {-0.5, -0.5}, .uv = { 0.0, 0.0 } },
+        { .pos = {+0.5, -0.5}, .uv = { 1.0, 0.0 } },
+        { .pos = {+0.5, +0.5}, .uv = { 1.0, 1.0 } },
+        { .pos = {-0.5, +0.5}, .uv = { 0.0, 1.0 } },
+    }};
 
     static std::array<std::uint16_t, 6> indexData = {
         0, 1, 2, // Triangle #0
@@ -1040,7 +1044,7 @@ void Game::createSprite(Sprite& sprite, const std::filesystem::path& texturePath
     { // vertex buffer
         const wgpu::BufferDescriptor bufferDesc{
             .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Vertex,
-            .size = pointData.size() * sizeof(float),
+            .size = pointData.size() * sizeof(SpriteVertex),
         };
 
         sprite.vertexBuffer = device.CreateBuffer(&bufferDesc);
@@ -1396,7 +1400,7 @@ void Game::render()
         }
     }
 
-#if 0
+#if 1
     { // sprite
         const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
             .view = nextFrameTexture,
