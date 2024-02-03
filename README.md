@@ -1,6 +1,6 @@
 # Learning WebGPU
 
-![gltf_scene_loading](screenshots/5_gltf_scene_loading.png)
+![skeletal_animation](screenshots/6_skeletal_animation.png)
 
 ## Building
 
@@ -29,23 +29,26 @@ cmake --build .
 
 ## Progress
 
-25.01.24 - loading complex glTF scenes
+19.12.23 - first triangle
 
-![gltf_scene_loading](screenshots/5_gltf_scene_loading.png)
-
-22.01.24 - simple Blinn-Phong lighting
-
-![blinn_phong](screenshots/4_blinn_phong.png)
-
-20.01.24 - model
-
-![model](screenshots/3_model.png)
+![triangle](screenshots/1_triangle.png)
 
 20.12.23 - textured quad
 
 ![textured_quad](screenshots/2_textured_quad.png)
 
-19.12.23 - first triangle
+20.01.24 - model
 
-![triangle](screenshots/1_triangle.png)
+![model](screenshots/3_model.png)
 
+22.01.24 - simple Blinn-Phong lighting
+
+![blinn_phong](screenshots/4_blinn_phong.png)
+
+25.01.24 - loading complex glTF scenes
+
+![gltf_scene_loading](screenshots/5_gltf_scene_loading.png)
+
+02.02.24 - skeletal animation
+
+![skeletal_animation](screenshots/6_skeletal_animation.png)

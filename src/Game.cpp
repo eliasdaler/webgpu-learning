@@ -1396,6 +1396,7 @@ void Game::render()
         }
     }
 
+#if 0
     { // sprite
         const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
             .view = nextFrameTexture,
@@ -1426,6 +1427,7 @@ void Game::render()
         renderPass.PopDebugGroup();
         renderPass.End();
     }
+#endif
 
     { // Dear ImGui
         const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{

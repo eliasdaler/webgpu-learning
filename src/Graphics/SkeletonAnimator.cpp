@@ -90,8 +90,7 @@ glm::mat4 sampleAnimation(const SkeletalAnimation& animation, JointId jointId, f
         const auto& rc = ts.rotations;
         if (!rc.empty()) {
             const auto [p, n, t] = findPrevNextKeys(rc.size(), time);
-            // slerp is slower, lerp is good enough
-            const auto rot = glm::lerp(rc[p], rc[n], t);
+            const auto rot = glm::slerp(rc[p], rc[n], t);
             tm *= glm::mat4_cast(rot);
         }
     }
