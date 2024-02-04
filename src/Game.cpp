@@ -113,7 +113,7 @@ struct MeshData {
 
 @group(2) @binding(0) var<storage, read> vertices: array<Vertex>;
 @group(2) @binding(1) var<uniform> meshData: MeshData;
-@group(2) @binding(2) var<uniform> jointMatrices: array<mat4x4f, 256>;
+@group(2) @binding(2) var<storage, read> jointMatrices: array<mat4x4f>;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
@@ -618,7 +618,7 @@ void Game::createMeshDrawingPipeline()
                 .visibility = wgpu::ShaderStage::Vertex,
                 .buffer =
                     {
-                        .type = wgpu::BufferBindingType::Uniform,
+                        .type = wgpu::BufferBindingType::ReadOnlyStorage,
                     },
             },
         }};
@@ -765,7 +765,7 @@ Game::EntityId Game::createEntitiesFromNode(
                 e.skeleton = scene.skeletons[node.skinId];
 
                 const auto bufferDesc = wgpu::BufferDescriptor{
-                    .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
+                    .usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst,
                     .size = sizeof(glm::mat4) * 256,
                 };
                 e.jointMatricesDataBuffer = device.CreateBuffer(&bufferDesc);
