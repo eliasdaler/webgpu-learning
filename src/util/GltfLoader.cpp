@@ -5,6 +5,7 @@
 #include <span>
 
 #include <Graphics/GPUMesh.h>
+#include <Graphics/MipMapGenerator.h>
 #include <Graphics/Scene.h>
 #include <Graphics/Skeleton.h>
 
@@ -215,10 +216,10 @@ void loadPrimitive(
 
         for (std::size_t i = 0; i < joints.size(); ++i) {
             auto& ids = mesh.jointIds[i];
-            ids.x = joints[i][0];
-            ids.y = joints[i][1];
-            ids.z = joints[i][2];
-            ids.w = joints[i][3];
+            ids.x = (std::uint32_t)joints[i][0];
+            ids.y = (std::uint32_t)joints[i][1];
+            ids.z = (std::uint32_t)joints[i][2];
+            ids.w = (std::uint32_t)joints[i][3];
         }
 
         for (std::size_t i = 0; i < weights.size(); ++i) {
@@ -260,8 +261,13 @@ void loadMaterial(
 {
     auto texFormat = wgpu::TextureFormat::RGBA8Unorm;
     if (!diffusePath.empty()) {
+        const auto loadCtx = util::TextureLoadContext{
+            .device = ctx.device,
+            .queue = ctx.queue,
+            .mipMapGenerator = ctx.mipMapGenerator,
+        };
         texFormat = wgpu::TextureFormat::RGBA8UnormSrgb;
-        material.diffuseTexture = util::loadTexture(ctx.device, ctx.queue, diffusePath, texFormat);
+        material.diffuseTexture = util::loadTexture(loadCtx, diffusePath, texFormat);
     } else {
         material.diffuseTexture = ctx.whiteTexture;
     }
@@ -283,16 +289,7 @@ void loadMaterial(
             ctx.queue.WriteBuffer(material.dataBuffer, 0, &md, sizeof(MaterialData));
         }
 
-        const auto textureViewDesc = wgpu::TextureViewDescriptor{
-            .format = texFormat,
-            .dimension = wgpu::TextureViewDimension::e2D,
-            .baseMipLevel = 0,
-            .mipLevelCount = 1,
-            .baseArrayLayer = 0,
-            .arrayLayerCount = 1,
-            .aspect = wgpu::TextureAspect::All,
-        };
-        const auto textureView = material.diffuseTexture.CreateView(&textureViewDesc);
+        const auto textureView = material.diffuseTexture.createView();
 
         const std::array<wgpu::BindGroupEntry, 3> bindings{{
             {
@@ -305,7 +302,7 @@ void loadMaterial(
             },
             {
                 .binding = 2,
-                .sampler = ctx.defaultSampler,
+                .sampler = ctx.linearSampler,
             },
         }};
         const auto bindGroupDesc = wgpu::BindGroupDescriptor{
@@ -370,7 +367,7 @@ void loadGPUMesh(const util::LoadContext ctx, const Mesh& cpuMesh, GPUMesh& gpuM
         if (cpuMesh.hasSkeleton) {
             attribs.push_back({
                 .name = "jointIds",
-                .componentSize = sizeof(glm::vec<4, JointId>),
+                .componentSize = sizeof(glm::vec<4, std::uint32_t>),
                 .data = (void*)cpuMesh.jointIds.data(),
             });
             attribs.push_back({
@@ -623,7 +620,6 @@ void SceneLoader::loadScene(const LoadContext& ctx, Scene& scene, const std::fil
     const auto& device = ctx.device;
     const auto& queue = ctx.queue;
     const auto& materialLayout = ctx.materialLayout;
-    const auto& sampler = ctx.defaultSampler;
 
     const auto fileDir = path.parent_path();
 

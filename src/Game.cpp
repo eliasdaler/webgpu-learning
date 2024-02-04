@@ -59,22 +59,6 @@ void defaultValidationErrorHandler(WGPUErrorType type, char const* message, void
     std::exit(1);
 };
 
-void defaultCompilationCallback(
-    WGPUCompilationInfoRequestStatus status,
-    WGPUCompilationInfo const* compilationInfo,
-    void* userdata)
-{
-    const auto* label = reinterpret_cast<const char*>(userdata);
-    for (std::size_t i = 0; i < compilationInfo->messageCount; ++i) {
-        const auto message = compilationInfo->messages[i];
-        if (message.type == (WGPUCompilationMessageType)wgpu::CompilationMessageType::Error) {
-            std::cout << "Error: ";
-        }
-        std::cout << "module \"" << label << "\": " << message.message << "(" << message.linePos
-                  << ":" << message.linePos << ")" << std::endl;
-    }
-}
-
 const char* shaderSource = R"(
 struct PerFrameData {
     viewProj: mat4x4f,
@@ -106,6 +90,8 @@ struct MeshData {
 @group(2) @binding(7) var<storage, read> weights: array<vec4f>;
 
 fn calculateWorldPos(vertexIndex: u32, pos: vec4f) -> vec4f {
+    // FIXME: pass whether or not mesh has skeleton via other means,
+    // otherwise this won't work for meshes with four joints.
     let hasSkeleton = (arrayLength(&jointIds) != 4);
     if (!hasSkeleton) {
         return meshData.model * pos;
@@ -280,8 +266,6 @@ void Game::init()
         adapter.GetLimits(&supportedLimits);
         std::cout << "maxUniformBufferBindingSize: "
                   << supportedLimits.limits.maxUniformBufferBindingSize << std::endl;
-        std::cout << "maxUniformBufferBindingSize: "
-                  << supportedLimits.limits.maxUniformBufferBindingSize << std::endl;
         std::cout << "minUniformBufferOffsetAlignment: "
                   << supportedLimits.limits.minUniformBufferOffsetAlignment << std::endl;
         std::cout << "minStorageBufferOffsetAlignment: "
@@ -370,6 +354,8 @@ void Game::init()
 
     initSwapChain(vSync);
 
+    mipMapGenerator.init(device);
+
     { // create depth dexture
         const auto textureDesc = wgpu::TextureDescriptor{
             .label = "depth texture",
@@ -401,17 +387,37 @@ void Game::init()
         depthTextureView = depthTexture.CreateView(&textureViewDesc);
     }
 
-    glm::vec4 whiteColor{1.f, 1.f, 1.f, 1.f};
-    whiteTexture = util::
-        createPixelTexture(device, queue, wgpu::TextureFormat::RGBA8Unorm, whiteColor, "white");
+    {
+        const auto loadCtx = util::TextureLoadContext{
+            .device = device,
+            .queue = queue,
+            .mipMapGenerator = mipMapGenerator,
+        };
+        glm::vec4 whiteColor{1.f, 1.f, 1.f, 1.f};
+        whiteTexture =
+            util::createPixelTexture(loadCtx, wgpu::TextureFormat::RGBA8Unorm, whiteColor, "white");
+    }
 
-    const auto samplerDesc = wgpu::SamplerDescriptor{
-        .addressModeU = wgpu::AddressMode::Repeat,
-        .addressModeV = wgpu::AddressMode::Repeat,
-        .magFilter = wgpu::FilterMode::Nearest,
-        .minFilter = wgpu::FilterMode::Nearest,
-    };
-    nearestSampler = device.CreateSampler(&samplerDesc);
+    {
+        const auto samplerDesc = wgpu::SamplerDescriptor{
+            .addressModeU = wgpu::AddressMode::Repeat,
+            .addressModeV = wgpu::AddressMode::Repeat,
+            .magFilter = wgpu::FilterMode::Nearest,
+            .minFilter = wgpu::FilterMode::Nearest,
+        };
+        nearestSampler = device.CreateSampler(&samplerDesc);
+    }
+
+    {
+        const auto samplerDesc = wgpu::SamplerDescriptor{
+            .addressModeU = wgpu::AddressMode::Repeat,
+            .addressModeV = wgpu::AddressMode::Repeat,
+            .magFilter = wgpu::FilterMode::Linear,
+            .minFilter = wgpu::FilterMode::Linear,
+            .mipmapFilter = wgpu::MipmapFilterMode::Linear,
+        };
+        linearSampler = device.CreateSampler(&samplerDesc);
+    }
 
     {
         const auto bufferDesc = wgpu::BufferDescriptor{
@@ -433,8 +439,8 @@ void Game::init()
     const auto yaeScene = loadScene("assets/models/yae.gltf");
     createEntitiesFromScene(yaeScene);
 
-    // const auto levelScene = loadScene("assets/levels/city/city.gltf");
-    const auto levelScene = loadScene("assets/levels/house/house.gltf");
+    const auto levelScene = loadScene("assets/levels/city/city.gltf");
+    // const auto levelScene = loadScene("assets/levels/house/house.gltf");
     createEntitiesFromScene(levelScene);
 
     const glm::vec3 yaePos{1.4f, 0.f, -2.f};
@@ -540,7 +546,7 @@ void Game::createMeshDrawingPipeline()
         };
 
         meshShaderModule = device.CreateShaderModule(&shaderDesc);
-        meshShaderModule.GetCompilationInfo(defaultCompilationCallback, (void*)"model");
+        meshShaderModule.GetCompilationInfo(util::defaultShaderCompilationCallback, (void*)"model");
     }
 
     { // per frame data layout
@@ -660,6 +666,7 @@ void Game::createMeshDrawingPipeline()
             .bindGroupLayouts = groupLayouts.data(),
         };
         wgpu::RenderPipelineDescriptor pipelineDesc{
+            .label = "mesh draw pipeline",
             .layout = device.CreatePipelineLayout(&layoutDesc),
             .primitive =
                 {
@@ -722,8 +729,10 @@ Scene Game::loadScene(const std::filesystem::path& path)
         .device = device,
         .queue = queue,
         .materialLayout = materialGroupLayout,
-        .defaultSampler = nearestSampler,
+        .nearestSampler = nearestSampler,
+        .linearSampler = linearSampler,
         .whiteTexture = whiteTexture,
+        .mipMapGenerator = mipMapGenerator,
         .materialCache = materialCache,
         .meshCache = meshCache,
         .requiredLimits = requiredLimits,
@@ -898,7 +907,8 @@ void Game::createSpriteDrawingPipeline()
         };
 
         spriteShaderModule = device.CreateShaderModule(&shaderDesc);
-        spriteShaderModule.GetCompilationInfo(defaultCompilationCallback, (void*)"sprite");
+        spriteShaderModule
+            .GetCompilationInfo(util::defaultShaderCompilationCallback, (void*)"sprite");
     }
 
     const std::array<wgpu::BindGroupLayoutEntry, 3> bindingLayoutEntries{{
@@ -941,6 +951,7 @@ void Game::createSpriteDrawingPipeline()
             .bindGroupLayouts = &spriteBindGroupLayout,
         };
         auto pipelineDesc = wgpu::RenderPipelineDescriptor{
+            .label = "sprite draw pipeline",
             .layout = device.CreatePipelineLayout(&layoutDesc),
             .primitive =
                 {
@@ -1010,8 +1021,15 @@ void Game::createSprite(Sprite& sprite, const std::filesystem::path& texturePath
     };
     /* clang-format on */
 
-    sprite.texture =
-        util::loadTexture(device, queue, texturePath, wgpu::TextureFormat::RGBA8UnormSrgb);
+    {
+        const auto loadCtx = util::TextureLoadContext{
+            .device = device,
+            .queue = queue,
+            .mipMapGenerator = mipMapGenerator,
+        };
+        sprite.texture =
+            util::loadTexture(loadCtx, texturePath, wgpu::TextureFormat::RGBA8UnormSrgb, false);
+    }
 
     { // vertex buffer
         const wgpu::BufferDescriptor bufferDesc{
@@ -1038,16 +1056,7 @@ void Game::createSprite(Sprite& sprite, const std::filesystem::path& texturePath
     }
 
     { // bind group
-        const auto textureViewDesc = wgpu::TextureViewDescriptor{
-            .format = wgpu::TextureFormat::RGBA8UnormSrgb,
-            .dimension = wgpu::TextureViewDimension::e2D,
-            .baseMipLevel = 0,
-            .mipLevelCount = 1,
-            .baseArrayLayer = 0,
-            .arrayLayerCount = 1,
-            .aspect = wgpu::TextureAspect::All,
-        };
-        const auto textureView = sprite.texture.CreateView(&textureViewDesc);
+        const auto textureView = sprite.texture.createView();
 
         const std::array<wgpu::BindGroupEntry, 3> bindings{{
             {

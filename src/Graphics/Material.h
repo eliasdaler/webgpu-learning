@@ -7,6 +7,8 @@
 
 #include <glm/vec4.hpp>
 
+#include <Graphics/Texture.h>
+
 struct MaterialData {
     glm::vec4 baseColor;
 };
@@ -18,7 +20,7 @@ struct Material {
     std::string name;
 
     wgpu::Buffer dataBuffer;
-    wgpu::Texture diffuseTexture;
+    Texture diffuseTexture;
     glm::vec4 baseColor{1.f, 1.f, 1.f, 1.f};
 
     wgpu::BindGroup bindGroup;

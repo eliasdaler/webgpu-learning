@@ -12,6 +12,7 @@ struct Scene;
 
 class MaterialCache;
 class MeshCache;
+class MipMapGenerator;
 
 namespace util
 {
@@ -19,10 +20,13 @@ struct LoadContext {
     const wgpu::Device& device;
     const wgpu::Queue& queue;
     const wgpu::BindGroupLayout& materialLayout;
-    const wgpu::Sampler& defaultSampler;
 
-    const wgpu::Texture& whiteTexture;
+    const wgpu::Sampler& nearestSampler;
+    const wgpu::Sampler& linearSampler;
 
+    const Texture& whiteTexture;
+
+    MipMapGenerator& mipMapGenerator;
     MaterialCache& materialCache;
     MeshCache& meshCache;
 

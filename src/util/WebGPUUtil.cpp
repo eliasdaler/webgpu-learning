@@ -10,6 +10,8 @@
 
 #include "ImageLoader.h"
 
+#include <Graphics/MipMapGenerator.h>
+
 namespace util
 {
 
@@ -57,6 +59,22 @@ wgpu::Device requestDevice(const wgpu::Adapter& adapter, wgpu::DeviceDescriptor 
     return device;
 }
 
+void defaultShaderCompilationCallback(
+    WGPUCompilationInfoRequestStatus status,
+    WGPUCompilationInfo const* compilationInfo,
+    void* userdata)
+{
+    const auto* label = reinterpret_cast<const char*>(userdata);
+    for (std::size_t i = 0; i < compilationInfo->messageCount; ++i) {
+        const auto message = compilationInfo->messages[i];
+        if (message.type == (WGPUCompilationMessageType)wgpu::CompilationMessageType::Error) {
+            std::cout << "Error: ";
+        }
+        std::cout << "module \"" << label << "\": " << message.message << "(" << message.linePos
+                  << ":" << message.linePos << ")" << std::endl;
+    }
+}
+
 void padBufferToFourBytes(std::vector<std::uint16_t>& indices)
 {
     if (indices.size() % 4 == 0) {
@@ -75,61 +93,37 @@ void padBufferToFourBytes(std::vector<std::uint16_t>& indices)
     }
 }
 
-wgpu::Texture loadTexture(
-    const wgpu::Device& device,
-    const wgpu::Queue& queue,
+std::uint32_t calculateMipCount(int imageWidth, int imageHeight)
+{
+    const auto maxSize = std::max(imageWidth, imageHeight);
+    return 1 + std::log2(maxSize);
+}
+
+Texture loadTexture(
+    const TextureLoadContext& ctx,
     const std::filesystem::path& path,
-    wgpu::TextureFormat format)
+    wgpu::TextureFormat format,
+    bool generateMips)
 {
     ImageData data = util::loadImage(path);
     assert(data.channels == 4);
     assert(data.pixels != nullptr);
     assert(format == wgpu::TextureFormat::RGBA8UnormSrgb && "other formats are not yet supported");
-    return loadTexture(device, queue, format, data, path.string().c_str());
-
-    const auto textureDesc = wgpu::TextureDescriptor{
-        .label = path.string().c_str(), // sadly these labels don't show up in RenderDoc
-        .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
-        .dimension = wgpu::TextureDimension::e2D,
-        .size =
-            {
-                .width = static_cast<std::uint32_t>(data.width),
-                .height = static_cast<std::uint32_t>(data.height),
-                .depthOrArrayLayers = 1,
-            },
-        .format = format,
-        .mipLevelCount = 1,
-        .sampleCount = 1,
-    };
-
-    auto texture = device.CreateTexture(&textureDesc);
-
-    // copy data to GPU
-    const wgpu::ImageCopyTexture destination{
-        .texture = texture,
-        .mipLevel = 0,
-        .origin = {0, 0, 0},
-    };
-    const wgpu::TextureDataLayout source{
-        .bytesPerRow = static_cast<std::uint32_t>(data.width * data.channels),
-        .rowsPerImage = static_cast<std::uint32_t>(data.height)};
-
-    const auto pixelsSize = data.width * data.height * data.channels;
-    queue.WriteTexture(&destination, (void*)data.pixels, pixelsSize, &source, &textureDesc.size);
-
-    return texture;
+    return loadTexture(ctx, format, data, generateMips, path.string().c_str());
 }
 
-wgpu::Texture loadTexture(
-    const wgpu::Device& device,
-    const wgpu::Queue& queue,
+Texture loadTexture(
+    const TextureLoadContext& ctx,
     wgpu::TextureFormat format,
     const ImageData& data,
+    bool generateMips,
     const char* label)
 {
+    const auto mipLevelCount = generateMips ? calculateMipCount(data.width, data.height) : 1;
     const auto textureDesc = wgpu::TextureDescriptor{
         .label = label,
-        .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
+        .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst |
+                 wgpu::TextureUsage::RenderAttachment,
         .dimension = wgpu::TextureDimension::e2D,
         .size =
             {
@@ -138,11 +132,11 @@ wgpu::Texture loadTexture(
                 .depthOrArrayLayers = 1,
             },
         .format = format,
-        .mipLevelCount = 1,
+        .mipLevelCount = mipLevelCount,
         .sampleCount = 1,
     };
 
-    auto texture = device.CreateTexture(&textureDesc);
+    auto texture = ctx.device.CreateTexture(&textureDesc);
 
     // copy data to GPU
     const wgpu::ImageCopyTexture destination{
@@ -155,14 +149,23 @@ wgpu::Texture loadTexture(
         .rowsPerImage = static_cast<std::uint32_t>(data.height)};
 
     const auto pixelsSize = data.width * data.height * data.channels;
-    queue.WriteTexture(&destination, (void*)data.pixels, pixelsSize, &source, &textureDesc.size);
+    ctx.queue
+        .WriteTexture(&destination, (void*)data.pixels, pixelsSize, &source, &textureDesc.size);
 
-    return texture;
+    auto tex = Texture{
+        .texture = texture,
+        .mipLevelCount = mipLevelCount,
+        .size = {data.width, data.height},
+        .format = format,
+    };
+    if (generateMips) {
+        ctx.mipMapGenerator.generateMips(ctx.device, ctx.queue, tex);
+    }
+    return tex;
 }
 
-wgpu::Texture createPixelTexture(
-    const wgpu::Device& device,
-    const wgpu::Queue& queue,
+Texture createPixelTexture(
+    const TextureLoadContext& ctx,
     wgpu::TextureFormat format,
     const glm::vec4& color,
     const char* label)
@@ -177,7 +180,7 @@ wgpu::Texture createPixelTexture(
     data.width = 1;
     data.height = 1;
     data.channels = 4;
-    return util::loadTexture(device, queue, format, data, label);
+    return util::loadTexture(ctx, format, data, false, label);
 }
 
 } // end of namespace util

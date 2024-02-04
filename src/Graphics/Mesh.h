@@ -11,8 +11,6 @@
 #include <Graphics/Skeleton.h>
 
 struct Mesh {
-    static constexpr std::size_t MAX_BONE_INFLUENCE = 4;
-
     std::vector<std::uint16_t> indices;
 
     std::vector<glm::vec4> positions;
@@ -21,7 +19,7 @@ struct Mesh {
     std::vector<glm::vec2> uvs;
 
     // skinned meshes only
-    std::vector<glm::vec<4, JointId>> jointIds;
+    std::vector<glm::vec<4, std::uint32_t>> jointIds;
     std::vector<glm::vec4> weights;
 
     bool hasSkeleton{false};

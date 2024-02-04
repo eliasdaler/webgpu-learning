@@ -9,6 +9,7 @@
 #include <Graphics/Camera.h>
 #include <Graphics/GPUMesh.h>
 #include <Graphics/Material.h>
+#include <Graphics/MipMapGenerator.h>
 #include <Graphics/Scene.h>
 #include <Graphics/SkeletonAnimator.h>
 
@@ -115,6 +116,7 @@ private:
     wgpu::Queue queue;
 
     wgpu::Sampler nearestSampler;
+    wgpu::Sampler linearSampler;
 
     wgpu::BindGroup perFrameBindGroup;
 
@@ -152,7 +154,7 @@ private:
     struct Sprite {
         wgpu::Buffer vertexBuffer;
         wgpu::Buffer indexBuffer;
-        wgpu::Texture texture;
+        Texture texture;
         wgpu::BindGroup bindGroup;
     };
     void createSprite(Sprite& sprite, const std::filesystem::path& texturePath);
@@ -176,7 +178,7 @@ private:
     std::vector<DrawCommand> drawCommands;
     std::vector<std::size_t> sortedDrawCommands;
 
-    wgpu::Texture whiteTexture;
+    Texture whiteTexture;
 
     bool vSync{true};
     bool frameLimit{true};
@@ -191,4 +193,6 @@ private:
     MeshCache meshCache;
 
     wgpu::Buffer emptyStorageBuffer;
+
+    MipMapGenerator mipMapGenerator;
 };
