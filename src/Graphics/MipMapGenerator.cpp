@@ -95,6 +95,15 @@ void MipMapGenerator::init(const wgpu::Device& device)
         textureGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
     }
 
+    (void)createPipelineForFormat(device, wgpu::TextureFormat::RGBA8UnormSrgb);
+}
+
+const wgpu::RenderPipeline& MipMapGenerator::createPipelineForFormat(
+    const wgpu::Device& device,
+    wgpu::TextureFormat format)
+{
+    assert(!pipelines.contains(format) && "pipeline for this format was already created");
+
     std::array<wgpu::BindGroupLayout, 1> groupLayouts{
         textureGroupLayout,
     };
@@ -122,9 +131,8 @@ void MipMapGenerator::init(const wgpu::Device& device)
 
     // fragment
     const auto blendState = wgpu::BlendState{};
-    // TODO: generate pipelines for other formats
     const auto colorTarget = wgpu::ColorTargetState{
-        .format = wgpu::TextureFormat::RGBA8UnormSrgb,
+        .format = format,
         .blend = &blendState,
         .writeMask = wgpu::ColorWriteMask::All,
     };
@@ -137,7 +145,20 @@ void MipMapGenerator::init(const wgpu::Device& device)
     };
     pipelineDesc.fragment = &fragmentState;
 
-    pipeline = device.CreateRenderPipeline(&pipelineDesc);
+    auto [it, inserted] = pipelines.emplace(format, device.CreateRenderPipeline(&pipelineDesc));
+    assert(inserted);
+    return it->second;
+}
+
+const wgpu::RenderPipeline& MipMapGenerator::getOrCreatePipeline(
+    const wgpu::Device& device,
+    wgpu::TextureFormat format)
+{
+    auto it = pipelines.find(format);
+    if (it != pipelines.end()) {
+        return it->second;
+    }
+    return createPipelineForFormat(device, format);
 }
 
 void MipMapGenerator::generateMips(
@@ -149,6 +170,9 @@ void MipMapGenerator::generateMips(
     const auto encoder = device.CreateCommandEncoder(&commandEncoderDesc);
 
     assert(texture.mipLevelCount >= 1);
+
+    const auto& pipeline = getOrCreatePipeline(device, texture.format);
+
     for (int baseMipLevel = 0; baseMipLevel < (int)texture.mipLevelCount - 1; ++baseMipLevel) {
         const std::array<wgpu::BindGroupEntry, 2> bindings{{
             {
