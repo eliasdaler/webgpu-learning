@@ -12,21 +12,17 @@ struct VSOutput {
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex : u32) -> VSOutput {
-  let pos = array(
-    vec2f( 0.0,  0.0),  // center
-    vec2f( 1.0,  0.0),  // right, center
-    vec2f( 0.0,  1.0),  // center, top
-    // 2st triangle
-    vec2f( 0.0,  1.0),  // center, top
-    vec2f( 1.0,  0.0),  // right, center
-    vec2f( 1.0,  1.0),  // right, top
-  );
+    let pos = array(
+        vec2f(-1.0f, -1.0f),
+        vec2f(3.0f, -1.0f),
+        vec2f(-1.0f, 3.0f),
+    );
 
-  var vsOutput: VSOutput;
-  let xy = pos[vertexIndex];
-  vsOutput.position = vec4f(xy * 2.0 - 1.0, 0.0, 1.0);
-  vsOutput.uv = vec2f(xy.x, 1.0 - xy.y);
-  return vsOutput;
+    var vsOutput: VSOutput;
+    let xy = pos[vertexIndex];
+    vsOutput.position = vec4f(xy * 2.0 - 1.0, 0.0, 1.0);
+    vsOutput.uv = vec2f(xy.x, 1.0 - xy.y);
+    return vsOutput;
 }
 
 @group(0) @binding(0) var ourTexture: texture_2d<f32>;
@@ -34,7 +30,7 @@ fn vs_main(@builtin(vertex_index) vertexIndex : u32) -> VSOutput {
 
 @fragment
 fn fs_main(fsInput: VSOutput) -> @location(0) vec4f {
-  return textureSample(ourTexture, ourSampler, fsInput.uv);
+    return textureSample(ourTexture, ourSampler, fsInput.uv);
 }
 )";
 }
@@ -208,7 +204,7 @@ void MipMapGenerator::generateMips(
 
         renderPass.SetPipeline(pipeline);
         renderPass.SetBindGroup(0, bindGroup);
-        renderPass.Draw(6);
+        renderPass.Draw(3);
 
         renderPass.PopDebugGroup();
         renderPass.End();
