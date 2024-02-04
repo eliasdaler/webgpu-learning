@@ -415,6 +415,7 @@ void Game::init()
             .magFilter = wgpu::FilterMode::Linear,
             .minFilter = wgpu::FilterMode::Linear,
             .mipmapFilter = wgpu::MipmapFilterMode::Linear,
+            .maxAnisotropy = 16, // TODO: allow to set anisotropy?
         };
         linearSampler = device.CreateSampler(&samplerDesc);
     }
@@ -423,7 +424,7 @@ void Game::init()
         const auto bufferDesc = wgpu::BufferDescriptor{
             .label = "empty storage buffer",
             .usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst,
-            .size = 64,
+            .size = 64, // D3D12 doesn't allow to create smaller buffers
         };
         emptyStorageBuffer = device.CreateBuffer(&bufferDesc);
     }

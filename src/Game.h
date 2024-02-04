@@ -24,8 +24,8 @@ public:
     struct Params {
         void validate();
 
-        int screenWidth = 640;
-        int screenHeight = 480;
+        int screenWidth = 1280;
+        int screenHeight = 960;
 
         std::string windowTitle = "Game";
     };
