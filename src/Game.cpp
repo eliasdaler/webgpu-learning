@@ -76,24 +76,6 @@ void defaultCompilationCallback(
 }
 
 const char* shaderSource = R"(
-struct Vertex {
-    position: vec3f,
-    uv_x: f32,
-    normal: vec3f,
-    uv_y: f32,
-    tangent: vec4f,
-
-    jointIds: vec4u,
-    weights: vec4f,
-};
-
-struct VertexOutput {
-    @builtin(position) position: vec4f,
-    @location(0) pos: vec3f,
-    @location(1) uv: vec2f,
-    @location(2) normal: vec3f,
-};
-
 struct PerFrameData {
     viewProj: mat4x4f,
     cameraPos: vec4f,
@@ -111,32 +93,55 @@ struct MeshData {
     model: mat4x4f,
 };
 
-@group(2) @binding(0) var<storage, read> vertices: array<Vertex>;
-@group(2) @binding(1) var<uniform> meshData: MeshData;
-@group(2) @binding(2) var<uniform> jointMatrices: array<mat4x4f, 256>;
+@group(2) @binding(0) var<uniform> meshData: MeshData;
+@group(2) @binding(1) var<storage, read> jointMatrices: array<mat4x4f>;
+
+// mesh attributes
+@group(2) @binding(2) var<storage, read> positions: array<vec4f>;
+@group(2) @binding(3) var<storage, read> normals: array<vec4f>;
+@group(2) @binding(4) var<storage, read> tangents: array<vec4f>;
+@group(2) @binding(5) var<storage, read> uvs: array<vec2f>;
+// skinned meshes only
+@group(2) @binding(6) var<storage, read> jointIds: array<vec4u>;
+@group(2) @binding(7) var<storage, read> weights: array<vec4f>;
+
+fn calculateWorldPos(vertexIndex: u32, pos: vec4f) -> vec4f {
+    let hasSkeleton = (arrayLength(&jointIds) != 0);
+    if (!hasSkeleton) {
+        return meshData.model * pos;
+    }
+
+    let jointIds = jointIds[vertexIndex];
+    let weights = weights[vertexIndex];
+    let skinMatrix =
+        weights.x * jointMatrices[jointIds.x] +
+        weights.y * jointMatrices[jointIds.y] +
+        weights.z * jointMatrices[jointIds.z] +
+        weights.w * jointMatrices[jointIds.w];
+    return meshData.model * skinMatrix * pos;
+}
+
+struct VertexOutput {
+    @builtin(position) position: vec4f,
+    @location(0) pos: vec3f,
+    @location(1) normal: vec3f,
+    @location(2) uv: vec2f,
+};
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-    let v = vertices[vertexIndex];
+    let pos = positions[vertexIndex];
+    let normal = normals[vertexIndex];
+    // let tangent = tangents[vertexIndex]; // unused for now
+    let uv = uvs[vertexIndex];
+
+    let worldPos = calculateWorldPos(vertexIndex, pos);
 
     var out: VertexOutput;
-
-    var worldPos = vec4(0.0);
-    if (any(v.weights != vec4(0.0))) {
-        let skinMatrix =
-            v.weights.x * jointMatrices[v.jointIds.x] +
-            v.weights.y * jointMatrices[v.jointIds.y] +
-            v.weights.z * jointMatrices[v.jointIds.z] +
-            v.weights.w * jointMatrices[v.jointIds.w];
-        worldPos = meshData.model * skinMatrix * vec4(v.position, 1.0);
-    } else {
-        worldPos = meshData.model * vec4(v.position, 1.0);
-    }
-
     out.position = fd.viewProj * worldPos;
     out.pos = worldPos.xyz;
-    out.uv = vec2(v.uv_x,v.uv_y);
-    out.normal = (vec4(v.normal, 1.0)).xyz;
+    out.normal = normal.xyz;
+    out.uv = uv;
 
     return out;
 }
@@ -359,6 +364,7 @@ void Game::init()
 
     { // create depth dexture
         const auto textureDesc = wgpu::TextureDescriptor{
+            .label = "depth texture",
             .usage = wgpu::TextureUsage::RenderAttachment,
             .dimension = wgpu::TextureDimension::e2D,
             .size =
@@ -399,18 +405,13 @@ void Game::init()
     };
     nearestSampler = device.CreateSampler(&samplerDesc);
 
-    { // temp hack
-        std::array<glm::mat4, 256> matrices;
-        for (auto& m : matrices) {
-            m = glm::mat4{1.f};
-        }
-
+    {
         const auto bufferDesc = wgpu::BufferDescriptor{
-            .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
-            .size = sizeof(matrices),
+            .label = "empty storage buffer",
+            .usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst,
+            .size = 0,
         };
-        identityJointMatricesDataBuffer = device.CreateBuffer(&bufferDesc);
-        queue.WriteBuffer(identityJointMatricesDataBuffer, 0, matrices.data(), sizeof(matrices));
+        emptyStorageBuffer = device.CreateBuffer(&bufferDesc);
     }
 
     initCamera();
@@ -463,6 +464,7 @@ void Game::initSceneData()
 {
     { // per frame data buffer
         const auto bufferDesc = wgpu::BufferDescriptor{
+            .label = "per frame data buffer",
             .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
             .size = sizeof(PerFrameData),
         };
@@ -478,6 +480,7 @@ void Game::initSceneData()
 
     { // dir light buffer
         const auto bufferDesc = wgpu::BufferDescriptor{
+            .label = "directional light data buffer",
             .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
             .size = sizeof(DirectionalLightData),
         };
@@ -553,6 +556,7 @@ void Game::createMeshDrawingPipeline()
         }};
 
         const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+            .label = "frame bind group",
             .entryCount = bindGroupLayoutEntries.size(),
             .entries = bindGroupLayoutEntries.data(),
         };
@@ -589,6 +593,7 @@ void Game::createMeshDrawingPipeline()
         }};
 
         const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+            .label = "material bind group",
             .entryCount = bindGroupLayoutEntries.size(),
             .entries = bindGroupLayoutEntries.data(),
         };
@@ -596,34 +601,40 @@ void Game::createMeshDrawingPipeline()
     }
 
     { // mesh data layout
-        const std::array<wgpu::BindGroupLayoutEntry, 3> bindGroupLayoutEntries{{
+        std::vector<wgpu::BindGroupLayoutEntry> bindGroupLayoutEntries{{
             {
+                // mesh data
                 .binding = 0,
+                .visibility = wgpu::ShaderStage::Vertex,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::Uniform,
+                    },
+            },
+            {
+                // jointMatrices
+                .binding = 1,
                 .visibility = wgpu::ShaderStage::Vertex,
                 .buffer =
                     {
                         .type = wgpu::BufferBindingType::ReadOnlyStorage,
                     },
             },
-            {
-                .binding = 1,
-                .visibility = wgpu::ShaderStage::Vertex,
-                .buffer =
-                    {
-                        .type = wgpu::BufferBindingType::Uniform,
-                    },
-            },
-            {
-                .binding = 2,
-                .visibility = wgpu::ShaderStage::Vertex,
-                .buffer =
-                    {
-                        .type = wgpu::BufferBindingType::Uniform,
-                    },
-            },
         }};
 
+        for (std::uint32_t i = 0; i < 6; ++i) {
+            bindGroupLayoutEntries.push_back({
+                .binding = 2 + i,
+                .visibility = wgpu::ShaderStage::Vertex,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::ReadOnlyStorage,
+                    },
+            });
+        }
+
         const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+            .label = "mesh bind group",
             .entryCount = bindGroupLayoutEntries.size(),
             .entries = bindGroupLayoutEntries.data(),
         };
@@ -747,6 +758,7 @@ Game::EntityId Game::createEntitiesFromNode(
         e.meshes = scene.meshes[node.meshIndex].primitives;
 
         const auto bufferDesc = wgpu::BufferDescriptor{
+            .label = "mesh data buffer",
             .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
             .size = sizeof(MeshData),
         };
@@ -758,15 +770,16 @@ Game::EntityId Game::createEntitiesFromNode(
         };
         queue.WriteBuffer(e.meshDataBuffer, 0, &md, sizeof(MeshData));
 
-        auto jointMatricesDataBuffer = identityJointMatricesDataBuffer;
+        auto jointMatricesDataBuffer = emptyStorageBuffer;
         { // skeleton
             if (node.skinId != -1) {
                 e.hasSkeleton = true;
                 e.skeleton = scene.skeletons[node.skinId];
 
                 const auto bufferDesc = wgpu::BufferDescriptor{
-                    .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
-                    .size = sizeof(glm::mat4) * 256,
+                    .label = "joint matrices data buffer",
+                    .usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst,
+                    .size = sizeof(glm::mat4) * e.skeleton.joints.size(),
                 };
                 e.jointMatricesDataBuffer = device.CreateBuffer(&bufferDesc);
                 jointMatricesDataBuffer = e.jointMatricesDataBuffer;
@@ -785,21 +798,42 @@ Game::EntityId Game::createEntitiesFromNode(
             for (std::size_t i = 0; i < e.meshes.size(); ++i) {
                 auto& mesh = meshCache.getMesh(e.meshes[i]);
 
-                const std::array<wgpu::BindGroupEntry, 3> bindings{{
+                std::vector<wgpu::BindGroupEntry> bindings{{
                     {
                         .binding = 0,
-                        .buffer = mesh.vertexBuffer,
-                    },
-                    {
-                        .binding = 1,
                         .buffer = e.meshDataBuffer,
                     },
                     {
-                        .binding = 2,
+                        .binding = 1,
                         .buffer = jointMatricesDataBuffer,
                     },
                 }};
+
+                for (std::size_t i = 0; i < mesh.attribs.size(); ++i) {
+                    const auto& attrib = mesh.attribs[i];
+                    bindings.push_back({
+                        .binding = 2 + static_cast<std::uint32_t>(i),
+                        .buffer = mesh.vertexBuffer,
+                        .offset = attrib.offset,
+                        .size = attrib.size,
+                    });
+                }
+
+                if (!mesh.hasSkeleton) {
+                    assert(mesh.attribs.size() == 4);
+                    // bind empty array to jointIds and weights
+                    bindings.push_back({
+                        .binding = 6,
+                        .buffer = emptyStorageBuffer,
+                    });
+                    bindings.push_back({
+                        .binding = 7,
+                        .buffer = emptyStorageBuffer,
+                    });
+                }
+
                 const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+                    .label = "mesh bind group",
                     .layout = meshGroupLayout.Get(),
                     .entryCount = bindings.size(),
                     .entries = bindings.data(),
@@ -972,6 +1006,7 @@ void Game::createSprite(Sprite& sprite, const std::filesystem::path& texturePath
 
     { // vertex buffer
         const wgpu::BufferDescriptor bufferDesc{
+            .label = "sprite vertex buffer",
             .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Storage,
             .size = pointData.size() * sizeof(SpriteVertex),
         };
@@ -983,6 +1018,7 @@ void Game::createSprite(Sprite& sprite, const std::filesystem::path& texturePath
 
     { // index buffer
         const wgpu::BufferDescriptor bufferDesc{
+            .label = "sprite index buffer",
             .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Index,
             .size = indexData.size() * sizeof(std::uint16_t),
         };
@@ -1019,6 +1055,7 @@ void Game::createSprite(Sprite& sprite, const std::filesystem::path& texturePath
             },
         }};
         const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .label = "sprite bind group",
             .layout = spriteBindGroupLayout.Get(),
             .entryCount = bindings.size(),
             .entries = bindings.data(),
