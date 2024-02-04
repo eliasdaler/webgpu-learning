@@ -330,7 +330,7 @@ void loadGPUMesh(const util::LoadContext ctx, const Mesh& cpuMesh, GPUMesh& gpuM
 
         gpuMesh.indexBuffer = ctx.device.CreateBuffer(&bufferDesc);
         ctx.queue.WriteBuffer(gpuMesh.indexBuffer, 0, cpuMesh.indices.data(), bufferDesc.size);
-        gpuMesh.indexBufferSize = cpuMesh.indices.size();
+        gpuMesh.indexBufferSize = static_cast<std::uint32_t>(cpuMesh.indices.size());
     }
 
     { // vertex buffer
@@ -338,9 +338,9 @@ void loadGPUMesh(const util::LoadContext ctx, const Mesh& cpuMesh, GPUMesh& gpuM
 
         struct AttribData {
             const char* name;
-            std::size_t componentSize;
+            std::uint64_t componentSize;
             void* data;
-            std::size_t offset;
+            std::uint64_t offset;
         };
 
         std::vector<AttribData> attribs{{
@@ -380,8 +380,8 @@ void loadGPUMesh(const util::LoadContext ctx, const Mesh& cpuMesh, GPUMesh& gpuM
             });
         }
 
-        std::size_t wholeSize{0};
-        std::size_t currentOffset{0};
+        std::uint64_t wholeSize{0};
+        std::uint64_t currentOffset{0};
         for (auto& attrib : attribs) {
             attrib.offset = currentOffset;
 

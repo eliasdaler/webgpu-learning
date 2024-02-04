@@ -35,7 +35,7 @@ public:
 
 private:
     // gltf material id -> material cache id
-    std::unordered_map<int, MaterialId> materialMapping;
+    std::unordered_map<std::size_t, MaterialId> materialMapping;
 
     // gltf node id -> JointId
     // for now only one skeleton per scene is supported

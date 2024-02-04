@@ -1164,7 +1164,7 @@ void Game::loop()
             const auto now = std::chrono::high_resolution_clock::now();
             const auto frameTime = std::chrono::duration<float>(now - prevTime).count();
             if (dt > frameTime) {
-                SDL_Delay(dt - frameTime);
+                SDL_Delay(static_cast<std::uint32_t>(dt - frameTime));
             }
         }
     }
