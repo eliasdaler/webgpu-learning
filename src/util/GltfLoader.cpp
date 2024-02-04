@@ -168,8 +168,28 @@ void loadPrimitive(
     const auto positions =
         getPackedBufferSpan<glm::vec3>(model, primitive, GLTF_POSITIONS_ACCESSOR);
     assert(positions.size() == mesh.vertices.size());
+    mesh.positions.resize(positions.size());
     for (std::size_t i = 0; i < positions.size(); ++i) {
         mesh.vertices[i].pos = positions[i];
+        mesh.positions[i] = glm::vec4(positions[i], 1.f);
+    }
+
+    auto numVertices = positions.size();
+    mesh.uvs.resize(numVertices);
+    mesh.normals.resize(numVertices);
+    mesh.tangents.resize(numVertices);
+    mesh.jointIds.resize(numVertices);
+    mesh.weights.resize(numVertices);
+
+    // load uvs
+    if (hasAccessor(primitive, GLTF_UVS_ACCESSOR)) {
+        const auto uvs = getPackedBufferSpan<glm::vec2>(model, primitive, GLTF_UVS_ACCESSOR);
+        assert(uvs.size() == mesh.vertices.size());
+        for (std::size_t i = 0; i < uvs.size(); ++i) {
+            mesh.vertices[i].uv_x = uvs[i].x;
+            mesh.vertices[i].uv_y = uvs[i].y;
+            mesh.uvs[i] = uvs[i];
+        }
     }
 
     // load normals
@@ -179,6 +199,7 @@ void loadPrimitive(
         assert(normals.size() == mesh.vertices.size());
         for (std::size_t i = 0; i < normals.size(); ++i) {
             mesh.vertices[i].normal = normals[i];
+            mesh.normals[i] = glm::vec4(normals[i], 1.f);
         }
     }
 
@@ -189,16 +210,7 @@ void loadPrimitive(
         assert(tangents.size() == mesh.vertices.size());
         for (std::size_t i = 0; i < tangents.size(); ++i) {
             mesh.vertices[i].tangent = tangents[i];
-        }
-    }
-
-    // load uvs
-    if (hasAccessor(primitive, GLTF_UVS_ACCESSOR)) {
-        const auto uvs = getPackedBufferSpan<glm::vec2>(model, primitive, GLTF_UVS_ACCESSOR);
-        assert(uvs.size() == mesh.vertices.size());
-        for (std::size_t i = 0; i < uvs.size(); ++i) {
-            mesh.vertices[i].uv_x = uvs[i].x;
-            mesh.vertices[i].uv_y = uvs[i].y;
+            mesh.tangents[i] = tangents[i];
         }
     }
 
@@ -219,12 +231,24 @@ void loadPrimitive(
                 // (see how skeletons are loaded)
                 mesh.vertices[i].jointIds[j] = joints[i][j];
             }
+
+            auto& ids = mesh.jointIds[i];
+            ids.x = joints[i][0];
+            ids.y = joints[i][1];
+            ids.z = joints[i][2];
+            ids.w = joints[i][3];
         }
 
         for (std::size_t i = 0; i < weights.size(); ++i) {
             for (std::size_t j = 0; j < 4; ++j) {
                 mesh.vertices[i].weights[j] = weights[i][j];
             }
+
+            auto& ws = mesh.weights[i];
+            ws.x = weights[i][0];
+            ws.y = weights[i][1];
+            ws.z = weights[i][2];
+            ws.w = weights[i][3];
         }
     }
 }
@@ -317,16 +341,79 @@ void loadMaterial(
 
 void loadGPUMesh(const util::LoadContext ctx, const Mesh& cpuMesh, GPUMesh& gpuMesh)
 {
-    // copy-pasted from Graphics/Util.cpp, but become a lot more complex soon
-
     { // vertex buffer
+        const auto numVertices = cpuMesh.positions.size();
+
+        struct AttribData {
+            const char* name;
+            std::size_t size; // component size
+            void* data;
+            std::size_t offset;
+        };
+
+        std::array<AttribData, 6> attribs{{
+            {
+                .name = "positions",
+                .size = sizeof(glm::vec4),
+                .data = (void*)cpuMesh.positions.data(),
+            },
+            {
+                .name = "uvs",
+                .size = sizeof(glm::vec2),
+                .data = (void*)cpuMesh.uvs.data(),
+            },
+            {
+                .name = "normals",
+                .size = sizeof(glm::vec4),
+                .data = (void*)cpuMesh.normals.data(),
+            },
+            {
+                .name = "tangents",
+                .size = sizeof(glm::vec4),
+                .data = (void*)cpuMesh.tangents.data(),
+            },
+            {
+                .name = "jointIds",
+                .size = sizeof(glm::vec<4, JointId>),
+                .data = (void*)cpuMesh.jointIds.data(),
+            },
+            {
+                .name = "weights",
+                .size = sizeof(glm::vec4),
+                .data = (void*)cpuMesh.weights.data(),
+            },
+        }};
+
+        std::size_t wholeSize{0};
+        std::size_t currentOffset{0};
+        for (auto& attrib : attribs) {
+            attrib.offset = currentOffset;
+
+            currentOffset += attrib.size * numVertices;
+
+            // round to minUniformBufferOffsetAlignment if needed
+            if (currentOffset % 256 != 0) {
+                auto newOffset = ((currentOffset / 256) + 1) * 256;
+                currentOffset = newOffset;
+            }
+
+            wholeSize += (currentOffset - attrib.offset);
+        }
+
         const auto bufferDesc = wgpu::BufferDescriptor{
             .usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst,
-            .size = cpuMesh.vertices.size() * sizeof(Mesh::Vertex),
+            .size = wholeSize,
         };
 
         gpuMesh.vertexBuffer = ctx.device.CreateBuffer(&bufferDesc);
-        ctx.queue.WriteBuffer(gpuMesh.vertexBuffer, 0, cpuMesh.vertices.data(), bufferDesc.size);
+
+        gpuMesh.attribs.reserve(attribs.size());
+
+        for (const auto& attrib : attribs) {
+            const auto arrSize = attrib.size * numVertices;
+            ctx.queue.WriteBuffer(gpuMesh.vertexBuffer, attrib.offset, attrib.data, arrSize);
+            gpuMesh.attribs.push_back({.offset = attrib.offset, .size = arrSize});
+        }
     }
 
     { // index buffer

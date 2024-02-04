@@ -31,6 +31,14 @@ struct Mesh {
     static_assert(alignof(glm::vec3) == 4);
 
     std::vector<Vertex> vertices;
+
+    std::vector<glm::vec4> positions;
+    std::vector<glm::vec2> uvs;
+    std::vector<glm::vec4> normals;
+    std::vector<glm::vec4> tangents;
+    std::vector<glm::vec<4, JointId>> jointIds;
+    std::vector<glm::vec4> weights;
+
     std::vector<std::uint16_t> indices;
 
     std::string name;

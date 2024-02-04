@@ -76,17 +76,6 @@ void defaultCompilationCallback(
 }
 
 const char* shaderSource = R"(
-struct Vertex {
-    position: vec3f,
-    uv_x: f32,
-    normal: vec3f,
-    uv_y: f32,
-    tangent: vec4f,
-
-    jointIds: vec4u,
-    weights: vec4f,
-};
-
 struct VertexOutput {
     @builtin(position) position: vec4f,
     @location(0) pos: vec3f,
@@ -111,32 +100,42 @@ struct MeshData {
     model: mat4x4f,
 };
 
-@group(2) @binding(0) var<storage, read> vertices: array<Vertex>;
-@group(2) @binding(1) var<uniform> meshData: MeshData;
-@group(2) @binding(2) var<storage, read> jointMatrices: array<mat4x4f>;
+@group(2) @binding(0) var<uniform> meshData: MeshData;
+@group(2) @binding(1) var<storage, read> jointMatrices: array<mat4x4f>;
+
+@group(2) @binding(2) var<storage, read> positions: array<vec4f>;
+@group(2) @binding(3) var<storage, read> uvs: array<vec2f>;
+@group(2) @binding(4) var<storage, read> normals: array<vec4f>;
+@group(2) @binding(5) var<storage, read> tangents: array<vec4f>;
+@group(2) @binding(6) var<storage, read> jointIds: array<vec4u>;
+@group(2) @binding(7) var<storage, read> weights: array<vec4f>;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-    let v = vertices[vertexIndex];
+    let pos = positions[vertexIndex];
+    let uv = uvs[vertexIndex];
+    let normal = normals[vertexIndex];
+    let jointIds = jointIds[vertexIndex];
+    let weights = weights[vertexIndex];
 
     var out: VertexOutput;
 
     var worldPos = vec4(0.0);
-    if (any(v.weights != vec4(0.0))) {
+    if (any(weights != vec4(0.0))) {
         let skinMatrix =
-            v.weights.x * jointMatrices[v.jointIds.x] +
-            v.weights.y * jointMatrices[v.jointIds.y] +
-            v.weights.z * jointMatrices[v.jointIds.z] +
-            v.weights.w * jointMatrices[v.jointIds.w];
-        worldPos = meshData.model * skinMatrix * vec4(v.position, 1.0);
+            weights.x * jointMatrices[jointIds.x] +
+            weights.y * jointMatrices[jointIds.y] +
+            weights.z * jointMatrices[jointIds.z] +
+            weights.w * jointMatrices[jointIds.w];
+        worldPos = meshData.model * skinMatrix * pos;
     } else {
-        worldPos = meshData.model * vec4(v.position, 1.0);
+        worldPos = meshData.model * pos;
     }
 
     out.position = fd.viewProj * worldPos;
     out.pos = worldPos.xyz;
-    out.uv = vec2(v.uv_x,v.uv_y);
-    out.normal = (vec4(v.normal, 1.0)).xyz;
+    out.uv = uv;
+    out.normal = normal.xyz;
 
     return out;
 }
@@ -406,7 +405,7 @@ void Game::init()
         }
 
         const auto bufferDesc = wgpu::BufferDescriptor{
-            .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
+            .usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst,
             .size = sizeof(matrices),
         };
         identityJointMatricesDataBuffer = device.CreateBuffer(&bufferDesc);
@@ -596,17 +595,10 @@ void Game::createMeshDrawingPipeline()
     }
 
     { // mesh data layout
-        const std::array<wgpu::BindGroupLayoutEntry, 3> bindGroupLayoutEntries{{
+        std::vector<wgpu::BindGroupLayoutEntry> bindGroupLayoutEntries{{
             {
+                // mesh data
                 .binding = 0,
-                .visibility = wgpu::ShaderStage::Vertex,
-                .buffer =
-                    {
-                        .type = wgpu::BufferBindingType::ReadOnlyStorage,
-                    },
-            },
-            {
-                .binding = 1,
                 .visibility = wgpu::ShaderStage::Vertex,
                 .buffer =
                     {
@@ -614,7 +606,8 @@ void Game::createMeshDrawingPipeline()
                     },
             },
             {
-                .binding = 2,
+                // jointMatrices
+                .binding = 1,
                 .visibility = wgpu::ShaderStage::Vertex,
                 .buffer =
                     {
@@ -623,7 +616,19 @@ void Game::createMeshDrawingPipeline()
             },
         }};
 
+        for (std::uint32_t i = 0; i < 6; ++i) {
+            bindGroupLayoutEntries.push_back({
+                .binding = 2 + i,
+                .visibility = wgpu::ShaderStage::Vertex,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::ReadOnlyStorage,
+                    },
+            });
+        }
+
         const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+            .label = "mesh bind group layout",
             .entryCount = bindGroupLayoutEntries.size(),
             .entries = bindGroupLayoutEntries.data(),
         };
@@ -785,21 +790,29 @@ Game::EntityId Game::createEntitiesFromNode(
             for (std::size_t i = 0; i < e.meshes.size(); ++i) {
                 auto& mesh = meshCache.getMesh(e.meshes[i]);
 
-                const std::array<wgpu::BindGroupEntry, 3> bindings{{
+                std::vector<wgpu::BindGroupEntry> bindings{{
                     {
                         .binding = 0,
-                        .buffer = mesh.vertexBuffer,
-                    },
-                    {
-                        .binding = 1,
                         .buffer = e.meshDataBuffer,
                     },
                     {
-                        .binding = 2,
+                        .binding = 1,
                         .buffer = jointMatricesDataBuffer,
                     },
                 }};
+
+                for (std::size_t i = 0; i < mesh.attribs.size(); ++i) {
+                    const auto& attrib = mesh.attribs[i];
+                    bindings.push_back({
+                        .binding = 2 + static_cast<std::uint32_t>(i),
+                        .buffer = mesh.vertexBuffer,
+                        .offset = attrib.offset,
+                        .size = attrib.size,
+                    });
+                }
+
                 const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+                    .label = "mesh group desc",
                     .layout = meshGroupLayout.Get(),
                     .entryCount = bindings.size(),
                     .entries = bindings.data(),
