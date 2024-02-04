@@ -1,5 +1,6 @@
 #include "util/WebGPUUtil.h"
 
+#include <array>
 #include <iostream>
 
 #include <dawn/dawn_proc.h>

@@ -177,7 +177,7 @@ private:
 
     wgpu::Texture whiteTexture;
 
-    bool vSync{true};
+    bool vSync{false};
     bool frameLimit{true};
     float frameTime{0.f};
     float avgFPS{0.f};

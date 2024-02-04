@@ -106,7 +106,7 @@ struct MeshData {
 @group(2) @binding(7) var<storage, read> weights: array<vec4f>;
 
 fn calculateWorldPos(vertexIndex: u32, pos: vec4f) -> vec4f {
-    let hasSkeleton = (arrayLength(&jointIds) != 0);
+    let hasSkeleton = (arrayLength(&jointIds) != 4);
     if (!hasSkeleton) {
         return meshData.model * pos;
     }
@@ -278,10 +278,12 @@ void Game::init()
     auto supportedLimits = wgpu::SupportedLimits{};
     { // report supported limits
         adapter.GetLimits(&supportedLimits);
-        std::cout << "max uniform buffer size: "
+        std::cout << "maxUniformBufferBindingSize: "
                   << supportedLimits.limits.maxUniformBufferBindingSize << std::endl;
-        std::cout << "max uniform buffer binding size: "
+        std::cout << "maxUniformBufferBindingSize: "
                   << supportedLimits.limits.maxUniformBufferBindingSize << std::endl;
+        std::cout << "minStorageBufferOffsetAlignment: "
+                  << supportedLimits.limits.minStorageBufferOffsetAlignment << std::endl;
         std::cout << "max bind groups: " << supportedLimits.limits.maxBindGroups << std::endl;
     }
 
@@ -318,7 +320,7 @@ void Game::init()
 
     // change to false if something is broken
     // but otherwise, it improves debug performance 2x
-    static const bool unsafeMode = true;
+    static const bool unsafeMode = false;
     if (unsafeMode) {
         enabledToggles.push_back("skip_validation");
     }
@@ -409,7 +411,7 @@ void Game::init()
         const auto bufferDesc = wgpu::BufferDescriptor{
             .label = "empty storage buffer",
             .usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst,
-            .size = 0,
+            .size = 64,
         };
         emptyStorageBuffer = device.CreateBuffer(&bufferDesc);
     }
