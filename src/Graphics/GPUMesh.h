@@ -21,4 +21,6 @@ struct GPUMesh {
         std::size_t size;
     };
     std::vector<AttribProps> attribs;
+
+    bool hasSkeleton{false};
 };

@@ -76,13 +76,6 @@ void defaultCompilationCallback(
 }
 
 const char* shaderSource = R"(
-struct VertexOutput {
-    @builtin(position) position: vec4f,
-    @location(0) pos: vec3f,
-    @location(1) uv: vec2f,
-    @location(2) normal: vec3f,
-};
-
 struct PerFrameData {
     viewProj: mat4x4f,
     cameraPos: vec4f,
@@ -103,35 +96,47 @@ struct MeshData {
 @group(2) @binding(0) var<uniform> meshData: MeshData;
 @group(2) @binding(1) var<storage, read> jointMatrices: array<mat4x4f>;
 
+// mesh attributes
 @group(2) @binding(2) var<storage, read> positions: array<vec4f>;
 @group(2) @binding(3) var<storage, read> uvs: array<vec2f>;
 @group(2) @binding(4) var<storage, read> normals: array<vec4f>;
 @group(2) @binding(5) var<storage, read> tangents: array<vec4f>;
+// skinned meshes only
 @group(2) @binding(6) var<storage, read> jointIds: array<vec4u>;
 @group(2) @binding(7) var<storage, read> weights: array<vec4f>;
+
+fn calculateWorldPos(vertexIndex: u32, pos: vec4f) -> vec4f {
+    let hasSkeleton = (arrayLength(&jointIds) != 0);
+    if (!hasSkeleton) {
+        return meshData.model * pos;
+    }
+
+    let jointIds = jointIds[vertexIndex];
+    let weights = weights[vertexIndex];
+    let skinMatrix =
+        weights.x * jointMatrices[jointIds.x] +
+        weights.y * jointMatrices[jointIds.y] +
+        weights.z * jointMatrices[jointIds.z] +
+        weights.w * jointMatrices[jointIds.w];
+    return meshData.model * skinMatrix * pos;
+}
+
+struct VertexOutput {
+    @builtin(position) position: vec4f,
+    @location(0) pos: vec3f,
+    @location(1) uv: vec2f,
+    @location(2) normal: vec3f,
+};
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     let pos = positions[vertexIndex];
     let uv = uvs[vertexIndex];
     let normal = normals[vertexIndex];
-    let jointIds = jointIds[vertexIndex];
-    let weights = weights[vertexIndex];
+
+    let worldPos = calculateWorldPos(vertexIndex, pos);
 
     var out: VertexOutput;
-
-    var worldPos = vec4(0.0);
-    if (any(weights != vec4(0.0))) {
-        let skinMatrix =
-            weights.x * jointMatrices[jointIds.x] +
-            weights.y * jointMatrices[jointIds.y] +
-            weights.z * jointMatrices[jointIds.z] +
-            weights.w * jointMatrices[jointIds.w];
-        worldPos = meshData.model * skinMatrix * pos;
-    } else {
-        worldPos = meshData.model * pos;
-    }
-
     out.position = fd.viewProj * worldPos;
     out.pos = worldPos.xyz;
     out.uv = uv;
@@ -398,18 +403,12 @@ void Game::init()
     };
     nearestSampler = device.CreateSampler(&samplerDesc);
 
-    { // temp hack
-        std::array<glm::mat4, 256> matrices;
-        for (auto& m : matrices) {
-            m = glm::mat4{1.f};
-        }
-
+    {
         const auto bufferDesc = wgpu::BufferDescriptor{
             .usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst,
-            .size = sizeof(matrices),
+            .size = 0,
         };
-        identityJointMatricesDataBuffer = device.CreateBuffer(&bufferDesc);
-        queue.WriteBuffer(identityJointMatricesDataBuffer, 0, matrices.data(), sizeof(matrices));
+        emptyArray = device.CreateBuffer(&bufferDesc);
     }
 
     initCamera();
@@ -763,7 +762,7 @@ Game::EntityId Game::createEntitiesFromNode(
         };
         queue.WriteBuffer(e.meshDataBuffer, 0, &md, sizeof(MeshData));
 
-        auto jointMatricesDataBuffer = identityJointMatricesDataBuffer;
+        auto jointMatricesDataBuffer = emptyArray;
         { // skeleton
             if (node.skinId != -1) {
                 e.hasSkeleton = true;
@@ -808,6 +807,17 @@ Game::EntityId Game::createEntitiesFromNode(
                         .buffer = mesh.vertexBuffer,
                         .offset = attrib.offset,
                         .size = attrib.size,
+                    });
+                }
+
+                if (!mesh.hasSkeleton) {
+                    bindings.push_back({
+                        .binding = 6,
+                        .buffer = emptyArray,
+                    });
+                    bindings.push_back({
+                        .binding = 7,
+                        .buffer = emptyArray,
                     });
                 }
 

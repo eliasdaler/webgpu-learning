@@ -157,20 +157,11 @@ void loadPrimitive(
         util::padBufferToFourBytes(mesh.indices);
     }
 
-    // resize vertices based on the first accessor size
-    for (const auto& [accessorName, accessorID] : primitive.attributes) {
-        const auto& accessor = model.accessors[accessorID];
-        mesh.vertices.resize(accessor.count);
-        break;
-    }
-
     // load positions
     const auto positions =
         getPackedBufferSpan<glm::vec3>(model, primitive, GLTF_POSITIONS_ACCESSOR);
-    assert(positions.size() == mesh.vertices.size());
     mesh.positions.resize(positions.size());
     for (std::size_t i = 0; i < positions.size(); ++i) {
-        mesh.vertices[i].pos = positions[i];
         mesh.positions[i] = glm::vec4(positions[i], 1.f);
     }
 
@@ -178,16 +169,12 @@ void loadPrimitive(
     mesh.uvs.resize(numVertices);
     mesh.normals.resize(numVertices);
     mesh.tangents.resize(numVertices);
-    mesh.jointIds.resize(numVertices);
-    mesh.weights.resize(numVertices);
 
     // load uvs
     if (hasAccessor(primitive, GLTF_UVS_ACCESSOR)) {
         const auto uvs = getPackedBufferSpan<glm::vec2>(model, primitive, GLTF_UVS_ACCESSOR);
-        assert(uvs.size() == mesh.vertices.size());
+        assert(uvs.size() == numVertices);
         for (std::size_t i = 0; i < uvs.size(); ++i) {
-            mesh.vertices[i].uv_x = uvs[i].x;
-            mesh.vertices[i].uv_y = uvs[i].y;
             mesh.uvs[i] = uvs[i];
         }
     }
@@ -196,9 +183,8 @@ void loadPrimitive(
     if (hasAccessor(primitive, GLTF_NORMALS_ACCESSOR)) {
         const auto normals =
             getPackedBufferSpan<glm::vec3>(model, primitive, GLTF_NORMALS_ACCESSOR);
-        assert(normals.size() == mesh.vertices.size());
+        assert(normals.size() == numVertices);
         for (std::size_t i = 0; i < normals.size(); ++i) {
-            mesh.vertices[i].normal = normals[i];
             mesh.normals[i] = glm::vec4(normals[i], 1.f);
         }
     }
@@ -207,31 +193,27 @@ void loadPrimitive(
     if (hasAccessor(primitive, GLTF_TANGENTS_ACCESSOR)) {
         const auto tangents =
             getPackedBufferSpan<glm::vec4>(model, primitive, GLTF_TANGENTS_ACCESSOR);
-        assert(tangents.size() == mesh.vertices.size());
+        assert(tangents.size() == numVertices);
         for (std::size_t i = 0; i < tangents.size(); ++i) {
-            mesh.vertices[i].tangent = tangents[i];
             mesh.tangents[i] = tangents[i];
         }
     }
 
     // load weights
     if (hasAccessor(primitive, GLTF_JOINTS_ACCESSOR)) {
+        mesh.hasSkeleton = true;
+        mesh.jointIds.resize(numVertices);
+        mesh.weights.resize(numVertices);
+
         // assume that less that 256 bones for now (TODO: fix)
         const auto joints =
             getPackedBufferSpan<std::uint8_t[4]>(model, primitive, GLTF_JOINTS_ACCESSOR);
         const auto weights = getPackedBufferSpan<float[4]>(model, primitive, GLTF_WEIGHTS_ACCESSOR);
 
-        const auto numVertices = mesh.vertices.size();
         assert(joints.size() == numVertices);
         assert(weights.size() == numVertices);
 
         for (std::size_t i = 0; i < joints.size(); ++i) {
-            for (std::size_t j = 0; j < 4; ++j) {
-                // NOTE: this works because jointId == joint index in skin
-                // (see how skeletons are loaded)
-                mesh.vertices[i].jointIds[j] = joints[i][j];
-            }
-
             auto& ids = mesh.jointIds[i];
             ids.x = joints[i][0];
             ids.y = joints[i][1];
@@ -240,10 +222,6 @@ void loadPrimitive(
         }
 
         for (std::size_t i = 0; i < weights.size(); ++i) {
-            for (std::size_t j = 0; j < 4; ++j) {
-                mesh.vertices[i].weights[j] = weights[i][j];
-            }
-
             auto& ws = mesh.weights[i];
             ws.x = weights[i][0];
             ws.y = weights[i][1];
@@ -351,7 +329,7 @@ void loadGPUMesh(const util::LoadContext ctx, const Mesh& cpuMesh, GPUMesh& gpuM
             std::size_t offset;
         };
 
-        std::array<AttribData, 6> attribs{{
+        std::vector<AttribData> attribs{{
             {
                 .name = "positions",
                 .size = sizeof(glm::vec4),
@@ -372,17 +350,21 @@ void loadGPUMesh(const util::LoadContext ctx, const Mesh& cpuMesh, GPUMesh& gpuM
                 .size = sizeof(glm::vec4),
                 .data = (void*)cpuMesh.tangents.data(),
             },
-            {
+        }};
+
+        gpuMesh.hasSkeleton = cpuMesh.hasSkeleton;
+        if (cpuMesh.hasSkeleton) {
+            attribs.push_back({
                 .name = "jointIds",
                 .size = sizeof(glm::vec<4, JointId>),
                 .data = (void*)cpuMesh.jointIds.data(),
-            },
-            {
+            });
+            attribs.push_back({
                 .name = "weights",
                 .size = sizeof(glm::vec4),
                 .data = (void*)cpuMesh.weights.data(),
-            },
-        }};
+            });
+        }
 
         std::size_t wholeSize{0};
         std::size_t currentOffset{0};
