@@ -106,6 +106,7 @@ private:
     wgpu::Instance instance;
     wgpu::Adapter adapter;
     wgpu::Device device;
+    wgpu::RequiredLimits requiredLimits;
 
     std::unique_ptr<wgpu::Surface> surface;
     std::unique_ptr<wgpu::SwapChain> swapChain;
@@ -177,7 +178,7 @@ private:
 
     wgpu::Texture whiteTexture;
 
-    bool vSync{false};
+    bool vSync{true};
     bool frameLimit{true};
     float frameTime{0.f};
     float avgFPS{0.f};

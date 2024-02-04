@@ -25,6 +25,8 @@ struct LoadContext {
 
     MaterialCache& materialCache;
     MeshCache& meshCache;
+
+    wgpu::RequiredLimits requiredLimits;
 };
 
 class SceneLoader {

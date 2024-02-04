@@ -282,6 +282,8 @@ void Game::init()
                   << supportedLimits.limits.maxUniformBufferBindingSize << std::endl;
         std::cout << "maxUniformBufferBindingSize: "
                   << supportedLimits.limits.maxUniformBufferBindingSize << std::endl;
+        std::cout << "minUniformBufferOffsetAlignment: "
+                  << supportedLimits.limits.minUniformBufferOffsetAlignment << std::endl;
         std::cout << "minStorageBufferOffsetAlignment: "
                   << supportedLimits.limits.minStorageBufferOffsetAlignment << std::endl;
         std::cout << "max bind groups: " << supportedLimits.limits.maxBindGroups << std::endl;
@@ -329,10 +331,14 @@ void Game::init()
     deviceTogglesDesc.enabledToggles = enabledToggles.data();
     deviceTogglesDesc.enabledToggleCount = enabledToggles.size();
 
-    // TODO: set limits?
-    // it seems like not setting anything initializes everything to the minimums
-    // required by the standard, which might be good, actually.
-    const auto requiredLimits = wgpu::RequiredLimits{};
+    requiredLimits = wgpu::RequiredLimits{};
+
+    // use minimal offset alignment that device permits
+    requiredLimits.limits.minStorageBufferOffsetAlignment =
+        supportedLimits.limits.minStorageBufferOffsetAlignment;
+    requiredLimits.limits.minUniformBufferOffsetAlignment =
+        requiredLimits.limits.minUniformBufferOffsetAlignment;
+
     const auto deviceDesc = wgpu::DeviceDescriptor{
         .nextInChain = &deviceTogglesDesc,
         .label = "Device",
@@ -720,6 +726,7 @@ Scene Game::loadScene(const std::filesystem::path& path)
         .whiteTexture = whiteTexture,
         .materialCache = materialCache,
         .meshCache = meshCache,
+        .requiredLimits = requiredLimits,
     };
 
     Scene scene;

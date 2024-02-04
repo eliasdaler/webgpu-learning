@@ -387,11 +387,10 @@ void loadGPUMesh(const util::LoadContext ctx, const Mesh& cpuMesh, GPUMesh& gpuM
 
             currentOffset += attrib.componentSize * numVertices;
 
-            // round to minUniformBufferOffsetAlignment if needed
-            const auto minUniformBufferOffsetAlignment = 256; // TODO: pass in load context
-            if (currentOffset % minUniformBufferOffsetAlignment != 0) {
-                currentOffset = ((currentOffset / minUniformBufferOffsetAlignment) + 1) *
-                                minUniformBufferOffsetAlignment;
+            const auto minOffsetAlignment =
+                ctx.requiredLimits.limits.minStorageBufferOffsetAlignment;
+            if (currentOffset % minOffsetAlignment != 0) {
+                currentOffset = ((currentOffset / minOffsetAlignment) + 1) * minOffsetAlignment;
             }
 
             wholeSize += (currentOffset - attrib.offset);
