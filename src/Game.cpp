@@ -124,8 +124,8 @@ fn calculateWorldPos(vertexIndex: u32, pos: vec4f) -> vec4f {
 struct VertexOutput {
     @builtin(position) position: vec4f,
     @location(0) pos: vec3f,
-    @location(1) uv: vec2f,
-    @location(2) normal: vec3f,
+    @location(1) normal: vec3f,
+    @location(2) uv: vec2f,
 };
 
 @vertex
@@ -364,6 +364,7 @@ void Game::init()
 
     { // create depth dexture
         const auto textureDesc = wgpu::TextureDescriptor{
+            .label = "depth texture",
             .usage = wgpu::TextureUsage::RenderAttachment,
             .dimension = wgpu::TextureDimension::e2D,
             .size =
@@ -406,10 +407,11 @@ void Game::init()
 
     {
         const auto bufferDesc = wgpu::BufferDescriptor{
+            .label = "empty storage buffer",
             .usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst,
             .size = 0,
         };
-        emptyArray = device.CreateBuffer(&bufferDesc);
+        emptyStorageBuffer = device.CreateBuffer(&bufferDesc);
     }
 
     initCamera();
@@ -462,6 +464,7 @@ void Game::initSceneData()
 {
     { // per frame data buffer
         const auto bufferDesc = wgpu::BufferDescriptor{
+            .label = "per frame data buffer",
             .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
             .size = sizeof(PerFrameData),
         };
@@ -477,6 +480,7 @@ void Game::initSceneData()
 
     { // dir light buffer
         const auto bufferDesc = wgpu::BufferDescriptor{
+            .label = "directional light data buffer",
             .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
             .size = sizeof(DirectionalLightData),
         };
@@ -552,6 +556,7 @@ void Game::createMeshDrawingPipeline()
         }};
 
         const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+            .label = "frame bind group",
             .entryCount = bindGroupLayoutEntries.size(),
             .entries = bindGroupLayoutEntries.data(),
         };
@@ -588,6 +593,7 @@ void Game::createMeshDrawingPipeline()
         }};
 
         const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+            .label = "material bind group",
             .entryCount = bindGroupLayoutEntries.size(),
             .entries = bindGroupLayoutEntries.data(),
         };
@@ -628,7 +634,7 @@ void Game::createMeshDrawingPipeline()
         }
 
         const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
-            .label = "mesh bind group layout",
+            .label = "mesh bind group",
             .entryCount = bindGroupLayoutEntries.size(),
             .entries = bindGroupLayoutEntries.data(),
         };
@@ -752,6 +758,7 @@ Game::EntityId Game::createEntitiesFromNode(
         e.meshes = scene.meshes[node.meshIndex].primitives;
 
         const auto bufferDesc = wgpu::BufferDescriptor{
+            .label = "mesh data buffer",
             .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
             .size = sizeof(MeshData),
         };
@@ -763,15 +770,16 @@ Game::EntityId Game::createEntitiesFromNode(
         };
         queue.WriteBuffer(e.meshDataBuffer, 0, &md, sizeof(MeshData));
 
-        auto jointMatricesDataBuffer = emptyArray;
+        auto jointMatricesDataBuffer = emptyStorageBuffer;
         { // skeleton
             if (node.skinId != -1) {
                 e.hasSkeleton = true;
                 e.skeleton = scene.skeletons[node.skinId];
 
                 const auto bufferDesc = wgpu::BufferDescriptor{
+                    .label = "joint matrices data buffer",
                     .usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst,
-                    .size = sizeof(glm::mat4) * 256,
+                    .size = sizeof(glm::mat4) * e.skeleton.joints.size(),
                 };
                 e.jointMatricesDataBuffer = device.CreateBuffer(&bufferDesc);
                 jointMatricesDataBuffer = e.jointMatricesDataBuffer;
@@ -816,16 +824,16 @@ Game::EntityId Game::createEntitiesFromNode(
                     // bind empty array to jointIds and weights
                     bindings.push_back({
                         .binding = 6,
-                        .buffer = emptyArray,
+                        .buffer = emptyStorageBuffer,
                     });
                     bindings.push_back({
                         .binding = 7,
-                        .buffer = emptyArray,
+                        .buffer = emptyStorageBuffer,
                     });
                 }
 
                 const auto bindGroupDesc = wgpu::BindGroupDescriptor{
-                    .label = "mesh group desc",
+                    .label = "mesh bind group",
                     .layout = meshGroupLayout.Get(),
                     .entryCount = bindings.size(),
                     .entries = bindings.data(),
@@ -998,6 +1006,7 @@ void Game::createSprite(Sprite& sprite, const std::filesystem::path& texturePath
 
     { // vertex buffer
         const wgpu::BufferDescriptor bufferDesc{
+            .label = "sprite vertex buffer",
             .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Storage,
             .size = pointData.size() * sizeof(SpriteVertex),
         };
@@ -1009,6 +1018,7 @@ void Game::createSprite(Sprite& sprite, const std::filesystem::path& texturePath
 
     { // index buffer
         const wgpu::BufferDescriptor bufferDesc{
+            .label = "sprite index buffer",
             .usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Index,
             .size = indexData.size() * sizeof(std::uint16_t),
         };
@@ -1045,6 +1055,7 @@ void Game::createSprite(Sprite& sprite, const std::filesystem::path& texturePath
             },
         }};
         const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .label = "sprite bind group",
             .layout = spriteBindGroupLayout.Get(),
             .entryCount = bindings.size(),
             .entries = bindings.data(),

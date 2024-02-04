@@ -189,5 +189,5 @@ private:
     MaterialCache materialCache;
     MeshCache meshCache;
 
-    wgpu::Buffer emptyArray;
+    wgpu::Buffer emptyStorageBuffer;
 };

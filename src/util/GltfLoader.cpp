@@ -170,15 +170,6 @@ void loadPrimitive(
     mesh.normals.resize(numVertices);
     mesh.tangents.resize(numVertices);
 
-    // load uvs
-    if (hasAccessor(primitive, GLTF_UVS_ACCESSOR)) {
-        const auto uvs = getPackedBufferSpan<glm::vec2>(model, primitive, GLTF_UVS_ACCESSOR);
-        assert(uvs.size() == numVertices);
-        for (std::size_t i = 0; i < uvs.size(); ++i) {
-            mesh.uvs[i] = uvs[i];
-        }
-    }
-
     // load normals
     if (hasAccessor(primitive, GLTF_NORMALS_ACCESSOR)) {
         const auto normals =
@@ -199,7 +190,16 @@ void loadPrimitive(
         }
     }
 
-    // load weights
+    // load uvs
+    if (hasAccessor(primitive, GLTF_UVS_ACCESSOR)) {
+        const auto uvs = getPackedBufferSpan<glm::vec2>(model, primitive, GLTF_UVS_ACCESSOR);
+        assert(uvs.size() == numVertices);
+        for (std::size_t i = 0; i < uvs.size(); ++i) {
+            mesh.uvs[i] = uvs[i];
+        }
+    }
+
+    // load jointIds and weights
     if (hasAccessor(primitive, GLTF_JOINTS_ACCESSOR)) {
         mesh.hasSkeleton = true;
         mesh.jointIds.resize(numVertices);
@@ -270,6 +270,7 @@ void loadMaterial(
 
         { // data buffer
             const auto bufferDesc = wgpu::BufferDescriptor{
+                .label = "material data buffer",
                 .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
                 .size = sizeof(MaterialData),
             };
@@ -308,6 +309,7 @@ void loadMaterial(
             },
         }};
         const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .label = "material bind group",
             .layout = ctx.materialLayout.Get(),
             .entryCount = bindings.size(),
             .entries = bindings.data(),
@@ -321,6 +323,7 @@ void loadGPUMesh(const util::LoadContext ctx, const Mesh& cpuMesh, GPUMesh& gpuM
 {
     { // index buffer
         const auto bufferDesc = wgpu::BufferDescriptor{
+            .label = "mesh index buffer",
             .usage = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst,
             .size = cpuMesh.indices.size() * sizeof(std::uint16_t),
         };
@@ -395,6 +398,7 @@ void loadGPUMesh(const util::LoadContext ctx, const Mesh& cpuMesh, GPUMesh& gpuM
         }
 
         const auto bufferDesc = wgpu::BufferDescriptor{
+            .label = "mesh data buffer",
             .usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst,
             .size = wholeSize,
         };
