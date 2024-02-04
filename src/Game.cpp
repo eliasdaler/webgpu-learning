@@ -98,9 +98,9 @@ struct MeshData {
 
 // mesh attributes
 @group(2) @binding(2) var<storage, read> positions: array<vec4f>;
-@group(2) @binding(3) var<storage, read> uvs: array<vec2f>;
-@group(2) @binding(4) var<storage, read> normals: array<vec4f>;
-@group(2) @binding(5) var<storage, read> tangents: array<vec4f>;
+@group(2) @binding(3) var<storage, read> normals: array<vec4f>;
+@group(2) @binding(4) var<storage, read> tangents: array<vec4f>;
+@group(2) @binding(5) var<storage, read> uvs: array<vec2f>;
 // skinned meshes only
 @group(2) @binding(6) var<storage, read> jointIds: array<vec4u>;
 @group(2) @binding(7) var<storage, read> weights: array<vec4f>;
@@ -131,16 +131,17 @@ struct VertexOutput {
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     let pos = positions[vertexIndex];
-    let uv = uvs[vertexIndex];
     let normal = normals[vertexIndex];
+    // let tangent = tangents[vertexIndex]; // unused for now
+    let uv = uvs[vertexIndex];
 
     let worldPos = calculateWorldPos(vertexIndex, pos);
 
     var out: VertexOutput;
     out.position = fd.viewProj * worldPos;
     out.pos = worldPos.xyz;
-    out.uv = uv;
     out.normal = normal.xyz;
+    out.uv = uv;
 
     return out;
 }
@@ -811,6 +812,8 @@ Game::EntityId Game::createEntitiesFromNode(
                 }
 
                 if (!mesh.hasSkeleton) {
+                    assert(mesh.attribs.size() == 4);
+                    // bind empty array to jointIds and weights
                     bindings.push_back({
                         .binding = 6,
                         .buffer = emptyArray,

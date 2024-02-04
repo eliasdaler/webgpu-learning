@@ -16,9 +16,9 @@ struct Mesh {
     std::vector<std::uint16_t> indices;
 
     std::vector<glm::vec4> positions;
-    std::vector<glm::vec2> uvs;
     std::vector<glm::vec4> normals;
     std::vector<glm::vec4> tangents;
+    std::vector<glm::vec2> uvs;
 
     // skinned meshes only
     std::vector<glm::vec<4, JointId>> jointIds;
