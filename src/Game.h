@@ -195,4 +195,6 @@ private:
     wgpu::Buffer emptyStorageBuffer;
 
     MipMapGenerator mipMapGenerator;
+
+    Texture skyboxTexture;
 };

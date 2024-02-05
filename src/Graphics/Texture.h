@@ -9,6 +9,7 @@ struct Texture {
     std::uint32_t mipLevelCount{0};
     glm::ivec2 size{};
     wgpu::TextureFormat format;
+    bool isCubemap{false};
 
     wgpu::TextureView createView() const;
     wgpu::TextureView createView(int baseMipLevel, int count) const;

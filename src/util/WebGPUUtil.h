@@ -59,4 +59,10 @@ Texture createPixelTexture(
     const glm::vec4& color,
     const char* label = nullptr);
 
+Texture loadCubemap(
+    const TextureLoadContext& ctx,
+    const std::filesystem::path& imagesDir,
+    bool generateMips = true,
+    const char* label = nullptr);
+
 } // namespace util

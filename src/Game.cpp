@@ -444,6 +444,17 @@ void Game::init()
     // const auto levelScene = loadScene("assets/levels/house/house.gltf");
     createEntitiesFromScene(levelScene);
 
+    // load skybox
+    {
+        const auto loadCtx = util::TextureLoadContext{
+            .device = device,
+            .queue = queue,
+            .mipMapGenerator = mipMapGenerator,
+        };
+        skyboxTexture =
+            util::loadCubemap(loadCtx, "assets/textures/skybox/distant_sunset", false, "skybox");
+    }
+
     const glm::vec3 yaePos{1.4f, 0.f, -2.f};
     auto& yae = findEntityByName("yae_mer");
     yae.transform.position = yaePos;
@@ -726,7 +737,7 @@ void Game::createMeshDrawingPipeline()
 
 Scene Game::loadScene(const std::filesystem::path& path)
 {
-    util::LoadContext loadContext{
+    const auto loadContext = util::LoadContext{
         .device = device,
         .queue = queue,
         .materialLayout = materialGroupLayout,
