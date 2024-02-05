@@ -80,6 +80,7 @@ private:
     void initCamera();
     void initSceneData();
     void createMeshDrawingPipeline();
+    void createSkyboxDrawingPipeline();
     void createSpriteDrawingPipeline();
     void initImGui();
 
@@ -128,7 +129,10 @@ private:
 
     struct PerFrameData {
         glm::mat4 viewProj;
+        glm::mat4 invViewProj;
         glm::vec4 cameraPos;
+        glm::vec2 pixelSize;
+        glm::vec2 padding; // T_T
     };
 
     struct MeshData {
@@ -197,4 +201,9 @@ private:
     MipMapGenerator mipMapGenerator;
 
     Texture skyboxTexture;
+    wgpu::RenderPipeline skyboxPipeline;
+    wgpu::ShaderModule skyboxShaderModule;
+    wgpu::BindGroupLayout skyboxGroupLayout;
+
+    wgpu::BindGroup skyboxBindGroup;
 };

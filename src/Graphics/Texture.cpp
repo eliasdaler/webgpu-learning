@@ -9,9 +9,11 @@ wgpu::TextureView Texture::createView(int baseMipLevel, int count) const
 {
     const auto textureViewDesc = wgpu::TextureViewDescriptor{
         .format = format,
-        .dimension = wgpu::TextureViewDimension::e2D,
+        .dimension = isCubemap ? wgpu::TextureViewDimension::Cube : wgpu::TextureViewDimension::e2D,
         .baseMipLevel = (std::uint32_t)baseMipLevel,
         .mipLevelCount = (std::uint32_t)count,
+        .baseArrayLayer = 0u,
+        .arrayLayerCount = isCubemap ? 6u : 1u,
         .aspect = wgpu::TextureAspect::All,
     };
     return texture.CreateView(&textureViewDesc);

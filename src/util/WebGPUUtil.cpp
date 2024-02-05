@@ -239,7 +239,7 @@ Texture loadCubemap(
             const auto textureDesc = wgpu::TextureDescriptor{
                 .label = label,
                 .usage = getTextureUsage(generateMips),
-                .dimension = wgpu::TextureDimension::e3D,
+                .dimension = wgpu::TextureDimension::e2D,
                 .size =
                     {
                         .width = static_cast<std::uint32_t>(data.width),

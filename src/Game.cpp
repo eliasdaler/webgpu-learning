@@ -62,7 +62,9 @@ void defaultValidationErrorHandler(WGPUErrorType type, char const* message, void
 const char* shaderSource = R"(
 struct PerFrameData {
     viewProj: mat4x4f,
+    invViewProj: mat4x4f,
     cameraPos: vec4f,
+    pixelSize: vec2f,
 };
 
 struct DirectionalLight {
@@ -222,6 +224,58 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         discard;
     }
 
+    // FIXME: this won't be needed after gamma correction step is added
+    let color = pow(textureColor.rgb, vec3(1/2.2f));
+    return vec4f(color, 1.0);
+}
+)";
+
+const char* skyboxShaderSource = R"(
+
+struct PerFrameData {
+    viewProj: mat4x4f,
+    invViewProj: mat4x4f,
+    cameraPos: vec4f,
+    pixelSize: vec2f,
+};
+
+struct VSOutput {
+  @builtin(position) position: vec4f,
+  @location(0) uv: vec2f,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertexIndex : u32) -> VSOutput {
+    let pos = array(
+        vec2f(-1.0f, -1.0f),
+        vec2f(3.0f, -1.0f),
+        vec2f(-1.0f, 3.0f),
+    );
+
+    var vsOutput: VSOutput;
+    let xy = pos[vertexIndex];
+    vsOutput.position = vec4f(xy * 2.0 - 1.0, 0.0, 1.0);
+    vsOutput.uv = vec2f(xy.x, 1.0 - xy.y);
+    return vsOutput;
+}
+
+@group(0) @binding(0) var<uniform> fd: PerFrameData;
+@group(0) @binding(1) var ourTexture: texture_cube<f32>;
+@group(0) @binding(2) var ourSampler: sampler;
+
+@fragment
+fn fs_main(fsInput: VSOutput) -> @location(0) vec4f {
+    var uv = fsInput.position.xy * fd.pixelSize;
+    uv.y = 1 - uv.y;
+
+    let ndc = uv * 2.0 - vec2(1.0);
+
+    let coord = fd.invViewProj * vec4(ndc, 1.0, 1.0);
+    let samplePoint = normalize(coord.xyz / vec3(coord.w));
+
+    let textureColor = textureSample(ourTexture, ourSampler, samplePoint);
+
+    // FIXME: this won't be needed after gamma correction step is added
     let color = pow(textureColor.rgb, vec3(1/2.2f));
     return vec4f(color, 1.0);
 }
@@ -432,6 +486,8 @@ void Game::init()
     initCamera();
 
     createMeshDrawingPipeline();
+    createSkyboxDrawingPipeline();
+
     initSceneData();
 
     const auto catoScene = loadScene("assets/models/cato.gltf");
@@ -453,6 +509,30 @@ void Game::init()
         };
         skyboxTexture =
             util::loadCubemap(loadCtx, "assets/textures/skybox/distant_sunset", false, "skybox");
+        assert(skyboxTexture.isCubemap);
+
+        // create bind group
+        // NOTE: frameDataBuffer must already be created
+        const std::array<wgpu::BindGroupEntry, 3> bindings{{
+            {
+                .binding = 0,
+                .buffer = frameDataBuffer,
+            },
+            {
+                .binding = 1,
+                .textureView = skyboxTexture.createView(),
+            },
+            {
+                .binding = 2,
+                .sampler = linearSampler,
+            },
+        }};
+        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .layout = skyboxGroupLayout.Get(),
+            .entryCount = bindings.size(),
+            .entries = bindings.data(),
+        };
+        skyboxBindGroup = device.CreateBindGroup(&bindGroupDesc);
     }
 
     const glm::vec3 yaePos{1.4f, 0.f, -2.f};
@@ -496,12 +576,6 @@ void Game::initSceneData()
         };
 
         frameDataBuffer = device.CreateBuffer(&bufferDesc);
-
-        const auto ud = PerFrameData{
-            .viewProj = camera.getViewProj(),
-            .cameraPos = glm::vec4(camera.getPosition(), 1.f),
-        };
-        queue.WriteBuffer(frameDataBuffer, 0, &ud, sizeof(PerFrameData));
     }
 
     { // dir light buffer
@@ -906,6 +980,102 @@ Game::Entity& Game::findEntityByName(std::string_view name) const
     throw std::runtime_error(std::string{"failed to find entity with name "} + std::string{name});
 }
 
+void Game::createSkyboxDrawingPipeline()
+{
+    { // create sprite shader module
+        auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
+        shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
+        shaderCodeDesc.code = skyboxShaderSource;
+
+        const auto shaderDesc = wgpu::ShaderModuleDescriptor{
+            .nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&shaderCodeDesc),
+            .label = "skybox",
+        };
+
+        skyboxShaderModule = device.CreateShaderModule(&shaderDesc);
+        skyboxShaderModule
+            .GetCompilationInfo(util::defaultShaderCompilationCallback, (void*)"skybox");
+    }
+
+    const std::array<wgpu::BindGroupLayoutEntry, 3> bindingLayoutEntries{{
+        {
+            .binding = 0,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .buffer =
+                {
+                    .type = wgpu::BufferBindingType::Uniform,
+                },
+        },
+        {
+            .binding = 1,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .texture =
+                {
+                    .sampleType = wgpu::TextureSampleType::Float,
+                    .viewDimension = wgpu::TextureViewDimension::Cube,
+                },
+        },
+        {
+            .binding = 2,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .sampler =
+                {
+                    .type = wgpu::SamplerBindingType::Filtering,
+                },
+        },
+    }};
+
+    const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+        .label = "skybox bind group",
+        .entryCount = bindingLayoutEntries.size(),
+        .entries = bindingLayoutEntries.data(),
+    };
+    skyboxGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
+
+    {
+        const auto layoutDesc = wgpu::PipelineLayoutDescriptor{
+            .bindGroupLayoutCount = 1,
+            .bindGroupLayouts = &skyboxGroupLayout,
+        };
+        auto pipelineDesc = wgpu::RenderPipelineDescriptor{
+            .label = "skybox draw pipeline",
+            .layout = device.CreatePipelineLayout(&layoutDesc),
+            .primitive =
+                {
+                    .topology = wgpu::PrimitiveTopology::TriangleList,
+                    .stripIndexFormat = wgpu::IndexFormat::Undefined,
+                    .frontFace = wgpu::FrontFace::CCW,
+                    .cullMode = wgpu::CullMode::None,
+                },
+        };
+
+        pipelineDesc.vertex = wgpu::VertexState{
+            .module = skyboxShaderModule,
+            .entryPoint = "vs_main",
+            .bufferCount = 0,
+        };
+
+        // fragment
+        const auto blendState = wgpu::BlendState{};
+
+        const wgpu::ColorTargetState colorTarget = {
+            .format = swapChainFormat,
+            .blend = &blendState,
+            .writeMask = wgpu::ColorWriteMask::All,
+        };
+
+        const wgpu::FragmentState fragmentState = {
+            .module = skyboxShaderModule,
+            .entryPoint = "fs_main",
+            .targetCount = 1,
+            .targets = &colorTarget,
+        };
+        pipelineDesc.fragment = &fragmentState;
+
+        skyboxPipeline = device.CreateRenderPipeline(&pipelineDesc);
+    }
+}
+
 void Game::createSpriteDrawingPipeline()
 {
     { // create sprite shader module
@@ -1204,9 +1374,13 @@ void Game::update(float dt)
 
     { // per frame data
 
+        const auto viewProj = camera.getViewProj();
         PerFrameData ud{
-            .viewProj = camera.getViewProj(),
+            .viewProj = viewProj,
+            .invViewProj = glm::inverse(viewProj),
             .cameraPos = glm::vec4(camera.getPosition(), 1.f),
+            .pixelSize =
+                glm::vec2(1.f / (float)params.screenWidth, 1.f / (float)params.screenHeight),
         };
         queue.WriteBuffer(frameDataBuffer, 0, &ud, sizeof(PerFrameData));
     }
@@ -1370,10 +1544,39 @@ void Game::render()
 
     const auto commandEncoderDesc = wgpu::CommandEncoderDescriptor{};
     const auto encoder = device.CreateCommandEncoder(&commandEncoderDesc);
-    { // draw meshes
+
+    { // draw sky
         const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
             .view = nextFrameTexture,
             .loadOp = wgpu::LoadOp::Clear,
+            .storeOp = wgpu::StoreOp::Store,
+            .clearValue = clearColor,
+        };
+
+        const auto renderPassDesc = wgpu::RenderPassDescriptor{
+            .colorAttachmentCount = 1,
+            .colorAttachments = &mainScreenAttachment,
+        };
+
+        {
+            ZoneScopedN("Sky pass");
+
+            const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
+            renderPass.PushDebugGroup("Sky pass");
+
+            renderPass.SetPipeline(skyboxPipeline);
+            renderPass.SetBindGroup(0, skyboxBindGroup);
+            renderPass.Draw(3);
+
+            renderPass.PopDebugGroup();
+            renderPass.End();
+        }
+    }
+
+    { // draw meshes
+        const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
+            .view = nextFrameTexture,
+            .loadOp = wgpu::LoadOp::Load,
             .storeOp = wgpu::StoreOp::Store,
             .clearValue = clearColor,
         };
