@@ -406,7 +406,7 @@ void Game::init()
 
     { // create CSM depth texture
         const auto textureDesc = wgpu::TextureDescriptor{
-            .label = "depth texture",
+            .label = "CSM shadow map",
             .usage = wgpu::TextureUsage::RenderAttachment,
             .dimension = wgpu::TextureDimension::e2D,
             .size =
@@ -755,21 +755,6 @@ void Game::createMeshDepthOnlyDrawingPipeline()
             .GetCompilationInfo(util::defaultShaderCompilationCallback, (void*)"mesh vertex");
     }
 
-    { // create fragment shader module
-        auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
-        shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
-        shaderCodeDesc.code = meshDrawFragmentDepthOnlyShaderSource.c_str();
-
-        const auto shaderDesc = wgpu::ShaderModuleDescriptor{
-            .nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&shaderCodeDesc),
-            .label = "mesh fragment (depth only)",
-        };
-
-        meshFragmentDepthOnlyShaderModule = device.CreateShaderModule(&shaderDesc);
-        meshFragmentDepthOnlyShaderModule.GetCompilationInfo(
-            util::defaultShaderCompilationCallback, (void*)"mesh fragment (depth only)");
-    }
-
     {
         // reused from normal mesh pipeline
         std::array<wgpu::BindGroupLayout, 3> groupLayouts{
@@ -805,34 +790,6 @@ void Game::createMeshDepthOnlyDrawingPipeline()
             .entryPoint = "vs_main",
             .bufferCount = 0,
         };
-
-        // fragment
-        const auto blendState = wgpu::BlendState{
-            .color =
-                {
-                    .operation = wgpu::BlendOperation::Add,
-                    .srcFactor = wgpu::BlendFactor::SrcAlpha,
-                    .dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha,
-                },
-            .alpha = {
-                .operation = wgpu::BlendOperation::Add,
-                .srcFactor = wgpu::BlendFactor::Zero,
-                .dstFactor = wgpu::BlendFactor::One,
-            }};
-
-        const auto colorTarget = wgpu::ColorTargetState{
-            .format = screenTextureFormat,
-            .blend = &blendState,
-            .writeMask = wgpu::ColorWriteMask::All,
-        };
-
-        const auto fragmentState = wgpu::FragmentState{
-            .module = meshFragmentDepthOnlyShaderModule,
-            .entryPoint = "fs_main",
-            .targetCount = 1,
-            .targets = &colorTarget,
-        };
-        pipelineDesc.fragment = &fragmentState;
 
         meshDepthOnlyPipeline = device.CreateRenderPipeline(&pipelineDesc);
     }
@@ -1713,13 +1670,6 @@ void Game::render()
     const auto encoder = device.CreateCommandEncoder(&commandEncoderDesc);
 
     { // draw CSM
-        const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
-            .view = screenTextureView,
-            .loadOp = wgpu::LoadOp::Load,
-            .storeOp = wgpu::StoreOp::Store,
-            .clearValue = clearColor,
-        };
-
         const auto depthStencilAttachment = wgpu::RenderPassDepthStencilAttachment{
             .view = csmShadowMapView,
             .depthLoadOp = wgpu::LoadOp::Clear,
@@ -1730,8 +1680,6 @@ void Game::render()
         };
 
         const auto renderPassDesc = wgpu::RenderPassDescriptor{
-            .colorAttachmentCount = 1,
-            .colorAttachments = &mainScreenAttachment,
             .depthStencilAttachment = &depthStencilAttachment,
         };
 

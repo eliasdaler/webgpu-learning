@@ -128,7 +128,6 @@ private:
 
     wgpu::ShaderModule meshVertexShaderModule;
     wgpu::ShaderModule meshFragmentShaderModule;
-    wgpu::ShaderModule meshFragmentDepthOnlyShaderModule;
 
     wgpu::BindGroupLayout perFrameDataGroupLayout;
     wgpu::BindGroupLayout materialGroupLayout;

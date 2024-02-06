@@ -149,21 +149,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 }
 )";
 
-const std::string meshDrawFragmentDepthOnlyShaderSource = std::string(meshShadersCommonDefs) + R"(
-@group(0) @binding(0) var<uniform> fd: PerFrameData;
-@group(0) @binding(1) var<uniform> dirLight: DirectionalLight;
-@group(0) @binding(2) var<uniform> csmData: CSMData;
-
-@group(1) @binding(0) var<uniform> md: MaterialData;
-@group(1) @binding(1) var texture: texture_2d<f32>;
-@group(1) @binding(2) var texSampler: sampler;
-
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    return vec4f(1.0, 0.0, 0.0, 1.0);
-}
-)";
-
 const char* spriteShaderSource = R"(
 struct SpriteVertex {
     positionAndUV: vec4f,
