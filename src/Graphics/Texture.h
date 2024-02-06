@@ -6,7 +6,7 @@
 
 struct Texture {
     wgpu::Texture texture;
-    std::uint32_t mipLevelCount{0};
+    std::uint32_t mipLevelCount{1};
     glm::ivec2 size{};
     wgpu::TextureFormat format;
     bool isCubemap{false};

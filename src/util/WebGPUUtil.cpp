@@ -171,7 +171,6 @@ Texture loadTexture(
             },
         .format = format,
         .mipLevelCount = mipLevelCount,
-        .sampleCount = 1,
     };
 
     auto texture = ctx.device.CreateTexture(&textureDesc);
@@ -248,7 +247,6 @@ Texture loadCubemap(
                     },
                 .format = format,
                 .mipLevelCount = mipLevelCount,
-                .sampleCount = 1,
             };
             texture = ctx.device.CreateTexture(&textureDesc);
             textureCreated = true;

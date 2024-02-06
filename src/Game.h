@@ -82,6 +82,7 @@ private:
     void createMeshDrawingPipeline();
     void createSkyboxDrawingPipeline();
     void createSpriteDrawingPipeline();
+    void createPostFXDrawingPipeline();
     void initImGui();
 
     void loop();
@@ -207,4 +208,13 @@ private:
     wgpu::BindGroupLayout skyboxGroupLayout;
 
     wgpu::BindGroup skyboxBindGroup;
+
+    Texture screenTexture;
+    wgpu::TextureView screenTextureView;
+    wgpu::TextureFormat screenTextureFormat;
+
+    wgpu::RenderPipeline postFXPipeline;
+    wgpu::ShaderModule postFXShaderModule;
+    wgpu::BindGroupLayout postFXScreenTextureGroupLayout;
+    wgpu::BindGroup postFXBindGroup;
 };

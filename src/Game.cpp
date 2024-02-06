@@ -183,8 +183,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     // ambient
     fragColor += diffuse * ambient;
 
-    let color = pow(fragColor, vec3(1/2.2f));
-    return vec4f(color, 1.0);
+    return vec4f(fragColor, 1.0);
 }
 )";
 
@@ -223,10 +222,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     if (textureColor.a < 0.01) {
         discard;
     }
-
-    // FIXME: this won't be needed after gamma correction step is added
-    let color = pow(textureColor.rgb, vec3(1/2.2f));
-    return vec4f(color, 1.0);
+    return vec4(textureColor.rgb, 1.0);
 }
 )";
 
@@ -277,10 +273,55 @@ fn fs_main(fsInput: VSOutput) -> @location(0) vec4f {
     let samplePoint = normalize(coord.xyz / vec3(coord.w) - fd.cameraPos.xyz);
 
     let textureColor = textureSample(texture, texSampler, samplePoint);
+    return vec4(textureColor.rgb, 1.0);
+}
+)";
 
-    // FIXME: this won't be needed after gamma correction step is added
-    let color = pow(textureColor.rgb, vec3(1/2.2f));
-    return vec4f(color, 1.0);
+const char* postFXShaderSource = R"(
+struct VSOutput {
+  @builtin(position) position: vec4f,
+  @location(0) uv: vec2f,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertexIndex : u32) -> VSOutput {
+    let pos = array(
+        vec2f(-1.0, -1.0),
+        vec2f(3.0, -1.0),
+        vec2f(-1.0, 3.0f),
+    );
+    let uv = array(
+        vec2f(0, 1),
+        vec2f(2, 1),
+        vec2f(0, -1),
+    );
+
+    var vsOutput: VSOutput;
+    vsOutput.position = vec4(pos[vertexIndex], 0.0, 1.0);
+    vsOutput.uv = uv[vertexIndex];
+    return vsOutput;
+}
+
+struct PerFrameData {
+    viewProj: mat4x4f,
+    invViewProj: mat4x4f,
+    cameraPos: vec4f,
+    pixelSize: vec2f,
+};
+
+@group(0) @binding(0) var<uniform> fd: PerFrameData;
+@group(0) @binding(1) var texture: texture_2d<f32>;
+@group(0) @binding(2) var texSampler: sampler;
+
+@fragment
+fn fs_main(fsInput: VSOutput) -> @location(0) vec4f {
+    let uv = fsInput.position.xy * fd.pixelSize;
+    let fragColor = textureSample(texture, texSampler, uv);
+
+    // gamma correction
+    var color = pow(fragColor.rgb, vec3(1/2.2f));
+
+    return vec4(color.rgb, 1.0);
 }
 )";
 
@@ -499,10 +540,62 @@ void Game::init()
 
     initCamera();
 
+    screenTextureFormat = wgpu::TextureFormat::RGBA16Float;
+
     createMeshDrawingPipeline();
     createSkyboxDrawingPipeline();
+    createSpriteDrawingPipeline();
+    createPostFXDrawingPipeline();
 
     initSceneData();
+
+    { // create screen texture
+        const auto textureDesc = wgpu::TextureDescriptor{
+            .label = "screen",
+            .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::RenderAttachment,
+            .dimension = wgpu::TextureDimension::e2D,
+            .size =
+                {
+                    .width = static_cast<std::uint32_t>(params.screenWidth),
+                    .height = static_cast<std::uint32_t>(params.screenHeight),
+                    .depthOrArrayLayers = 1,
+                },
+            .format = screenTextureFormat,
+        };
+
+        auto screenTex = device.CreateTexture(&textureDesc);
+
+        screenTexture = Texture{
+            .texture = screenTex,
+            .mipLevelCount = 1,
+            .size = {params.screenWidth, params.screenHeight},
+            .format = screenTextureFormat,
+        };
+        screenTextureView = screenTexture.createView();
+    }
+
+    { // create bind group for postFX
+        const std::array<wgpu::BindGroupEntry, 3> bindings{{
+            {
+                .binding = 0,
+                .buffer = frameDataBuffer,
+            },
+            {
+                .binding = 1,
+                .textureView = screenTextureView,
+            },
+            {
+                .binding = 2,
+                .sampler = nearestSampler,
+            },
+        }};
+        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .layout = postFXScreenTextureGroupLayout.Get(),
+            .entryCount = bindings.size(),
+            .entries = bindings.data(),
+        };
+        postFXBindGroup = device.CreateBindGroup(&bindGroupDesc);
+    }
 
     // load skybox
     {
@@ -557,7 +650,6 @@ void Game::init()
     auto& cato = findEntityByName("Cato");
     cato.transform.position = catoPos;
 
-    createSpriteDrawingPipeline();
     createSprite(sprite, "assets/textures/tree.png");
 
     initImGui();
@@ -771,7 +863,6 @@ void Game::createMeshDrawingPipeline()
             .primitive =
                 {
                     .topology = wgpu::PrimitiveTopology::TriangleList,
-                    .stripIndexFormat = wgpu::IndexFormat::Undefined,
                     .frontFace = wgpu::FrontFace::CCW,
                     .cullMode = wgpu::CullMode::Back,
                 },
@@ -806,7 +897,7 @@ void Game::createMeshDrawingPipeline()
             }};
 
         const auto colorTarget = wgpu::ColorTargetState{
-            .format = swapChainFormat,
+            .format = screenTextureFormat,
             .blend = &blendState,
             .writeMask = wgpu::ColorWriteMask::All,
         };
@@ -1057,7 +1148,6 @@ void Game::createSkyboxDrawingPipeline()
             .primitive =
                 {
                     .topology = wgpu::PrimitiveTopology::TriangleList,
-                    .stripIndexFormat = wgpu::IndexFormat::Undefined,
                     .frontFace = wgpu::FrontFace::CCW,
                     .cullMode = wgpu::CullMode::None,
                 },
@@ -1073,7 +1163,7 @@ void Game::createSkyboxDrawingPipeline()
         const auto blendState = wgpu::BlendState{};
 
         const wgpu::ColorTargetState colorTarget = {
-            .format = swapChainFormat,
+            .format = screenTextureFormat,
             .blend = &blendState,
             .writeMask = wgpu::ColorWriteMask::All,
         };
@@ -1087,6 +1177,103 @@ void Game::createSkyboxDrawingPipeline()
         pipelineDesc.fragment = &fragmentState;
 
         skyboxPipeline = device.CreateRenderPipeline(&pipelineDesc);
+    }
+}
+
+void Game::createPostFXDrawingPipeline()
+{
+    { // create sprite shader module
+        auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
+        shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
+        shaderCodeDesc.code = postFXShaderSource;
+
+        const auto shaderDesc = wgpu::ShaderModuleDescriptor{
+            .nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&shaderCodeDesc),
+            .label = "post fx",
+        };
+
+        postFXShaderModule = device.CreateShaderModule(&shaderDesc);
+        postFXShaderModule
+            .GetCompilationInfo(util::defaultShaderCompilationCallback, (void*)"post fx");
+    }
+
+    const std::array<wgpu::BindGroupLayoutEntry, 3> bindingLayoutEntries{{
+        {
+            // per frame data
+            .binding = 0,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .buffer =
+                {
+                    .type = wgpu::BufferBindingType::Uniform,
+                },
+        },
+        {
+            // screen texture
+            .binding = 1,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .texture =
+                {
+                    .sampleType = wgpu::TextureSampleType::Float,
+                    .viewDimension = wgpu::TextureViewDimension::e2D,
+                },
+        },
+        {
+            // screen texture sampler
+            .binding = 2,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .sampler =
+                {
+                    .type = wgpu::SamplerBindingType::Filtering,
+                },
+        },
+    }};
+
+    const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+        .label = "post fx screen texture bind group",
+        .entryCount = bindingLayoutEntries.size(),
+        .entries = bindingLayoutEntries.data(),
+    };
+    postFXScreenTextureGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
+
+    {
+        const auto layoutDesc = wgpu::PipelineLayoutDescriptor{
+            .bindGroupLayoutCount = 1,
+            .bindGroupLayouts = &postFXScreenTextureGroupLayout,
+        };
+        auto pipelineDesc = wgpu::RenderPipelineDescriptor{
+            .label = "post fx pipeline",
+            .layout = device.CreatePipelineLayout(&layoutDesc),
+            .primitive =
+                {
+                    .topology = wgpu::PrimitiveTopology::TriangleList,
+                    .cullMode = wgpu::CullMode::None,
+                },
+        };
+
+        pipelineDesc.vertex = wgpu::VertexState{
+            .module = postFXShaderModule,
+            .entryPoint = "vs_main",
+            .bufferCount = 0,
+        };
+
+        // fragment
+        const auto blendState = wgpu::BlendState{};
+
+        const wgpu::ColorTargetState colorTarget = {
+            .format = swapChainFormat,
+            .blend = &blendState,
+            .writeMask = wgpu::ColorWriteMask::All,
+        };
+
+        const wgpu::FragmentState fragmentState = {
+            .module = postFXShaderModule,
+            .entryPoint = "fs_main",
+            .targetCount = 1,
+            .targets = &colorTarget,
+        };
+        pipelineDesc.fragment = &fragmentState;
+
+        postFXPipeline = device.CreateRenderPipeline(&pipelineDesc);
     }
 }
 
@@ -1152,7 +1339,6 @@ void Game::createSpriteDrawingPipeline()
             .primitive =
                 {
                     .topology = wgpu::PrimitiveTopology::TriangleList,
-                    .stripIndexFormat = wgpu::IndexFormat::Undefined,
                     .frontFace = wgpu::FrontFace::CCW,
                     .cullMode = wgpu::CullMode::None,
                 },
@@ -1179,7 +1365,7 @@ void Game::createSpriteDrawingPipeline()
             }};
 
         const wgpu::ColorTargetState colorTarget = {
-            .format = swapChainFormat,
+            .format = screenTextureFormat,
             .blend = &blendState,
             .writeMask = wgpu::ColorWriteMask::All,
         };
@@ -1561,7 +1747,7 @@ void Game::render()
 
     { // draw sky
         const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
-            .view = nextFrameTexture,
+            .view = screenTextureView,
             .loadOp = wgpu::LoadOp::Clear,
             .storeOp = wgpu::StoreOp::Store,
             .clearValue = clearColor,
@@ -1589,7 +1775,7 @@ void Game::render()
 
     { // draw meshes
         const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
-            .view = nextFrameTexture,
+            .view = screenTextureView,
             .loadOp = wgpu::LoadOp::Load,
             .storeOp = wgpu::StoreOp::Store,
             .clearValue = clearColor,
@@ -1650,7 +1836,7 @@ void Game::render()
 #if 0
     { // sprite
         const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
-            .view = nextFrameTexture,
+            .view = screenTextureView,
             .loadOp = wgpu::LoadOp::Load,
             .storeOp = wgpu::StoreOp::Store,
         };
@@ -1678,6 +1864,34 @@ void Game::render()
         renderPass.End();
     }
 #endif
+
+    { // post fx
+        const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
+            .view = nextFrameTexture,
+            .loadOp = wgpu::LoadOp::Clear,
+            .storeOp = wgpu::StoreOp::Store,
+            .clearValue = clearColor,
+        };
+
+        const auto renderPassDesc = wgpu::RenderPassDescriptor{
+            .colorAttachmentCount = 1,
+            .colorAttachments = &mainScreenAttachment,
+        };
+
+        {
+            ZoneScopedN("Post FX pass");
+
+            const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
+            renderPass.PushDebugGroup("Post FX pass");
+
+            renderPass.SetPipeline(postFXPipeline);
+            renderPass.SetBindGroup(0, postFXBindGroup);
+            renderPass.Draw(3);
+
+            renderPass.PopDebugGroup();
+            renderPass.End();
+        }
+    }
 
     { // Dear ImGui
         const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
