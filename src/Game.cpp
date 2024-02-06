@@ -214,11 +214,7 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    // uv has origin at bottom left
-    var uv_c = in.uv;
-    uv_c.y = 1 - uv_c.y;
-
-    let textureColor = textureSample(texture, texSampler, uv_c).rgba;
+    let textureColor = textureSample(texture, texSampler, in.uv).rgba;
     if (textureColor.a < 0.01) {
         discard;
     }
@@ -1393,10 +1389,10 @@ void Game::createSprite(Sprite& sprite, const std::filesystem::path& texturePath
 
     /* clang-format off */
     static std::array<SpriteVertex, 4> pointData{{
-        { .pos = {-0.5, -0.5}, .uv = { 0.0, 0.0 } },
-        { .pos = {+0.5, -0.5}, .uv = { 1.0, 0.0 } },
-        { .pos = {+0.5, +0.5}, .uv = { 1.0, 1.0 } },
-        { .pos = {-0.5, +0.5}, .uv = { 0.0, 1.0 } },
+        { .pos = {-0.5, -0.5}, .uv = { 0.0, 1.0 } },
+        { .pos = {+0.5, -0.5}, .uv = { 1.0, 1.0 } },
+        { .pos = {+0.5, +0.5}, .uv = { 1.0, 0.0 } },
+        { .pos = {-0.5, +0.5}, .uv = { 0.0, 0.0 } },
     }};
 
     static std::array<std::uint16_t, 6> indexData = {
