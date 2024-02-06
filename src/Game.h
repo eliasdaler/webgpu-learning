@@ -125,7 +125,8 @@ private:
 
     wgpu::BindGroup perFrameBindGroup;
 
-    wgpu::ShaderModule meshShaderModule;
+    wgpu::ShaderModule meshVertexShaderModule;
+    wgpu::ShaderModule meshFragmentShaderModule;
     wgpu::BindGroupLayout perFrameDataGroupLayout;
     wgpu::BindGroupLayout materialGroupLayout;
     wgpu::BindGroupLayout meshGroupLayout;
