@@ -10,25 +10,6 @@ struct VSOutput {
   @location(0) uv: vec2f,
 };
 
-@vertex
-fn vs_main(@builtin(vertex_index) vertexIndex : u32) -> VSOutput {
-    let pos = array(
-        vec2f(-1.0, -1.0),
-        vec2f(3.0, -1.0),
-        vec2f(-1.0, 3.0f),
-    );
-    let uv = array(
-        vec2f(0, 1),
-        vec2f(2, 1),
-        vec2f(0, -1),
-    );
-
-    var vsOutput: VSOutput;
-    vsOutput.position = vec4(pos[vertexIndex], 0.0, 1.0);
-    vsOutput.uv = uv[vertexIndex];
-    return vsOutput;
-}
-
 @group(0) @binding(0) var texture: texture_2d<f32>;
 @group(0) @binding(1) var texSampler: sampler;
 
@@ -39,8 +20,12 @@ fn fs_main(fsInput: VSOutput) -> @location(0) vec4f {
 )";
 }
 
-void MipMapGenerator::init(const wgpu::Device& device)
+void MipMapGenerator::init(
+    const wgpu::Device& device,
+    const wgpu::ShaderModule& fullscreenTriangleShaderModule)
 {
+    this->fullscreenTriangleShaderModule = fullscreenTriangleShaderModule;
+
     { // create shader module
         auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
         shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
@@ -124,7 +109,7 @@ const wgpu::RenderPipeline& MipMapGenerator::createPipelineForFormat(
     };
 
     pipelineDesc.vertex = wgpu::VertexState{
-        .module = shaderModule,
+        .module = fullscreenTriangleShaderModule,
         .entryPoint = "vs_main",
         .bufferCount = 0,
     };

@@ -8,7 +8,7 @@ class Texture;
 
 class MipMapGenerator {
 public:
-    void init(const wgpu::Device& device);
+    void init(const wgpu::Device& device, const wgpu::ShaderModule& fullscreenTriangleShaderModule);
 
     const wgpu::BindGroupLayout& getTextureGroupLayout() { return textureGroupLayout; }
 
@@ -30,6 +30,7 @@ private:
         const wgpu::TextureView& inputView,
         const wgpu::TextureView& outputView) const;
 
+    wgpu::ShaderModule fullscreenTriangleShaderModule;
     wgpu::ShaderModule shaderModule;
     wgpu::BindGroupLayout textureGroupLayout;
     wgpu::Sampler linearSampler;

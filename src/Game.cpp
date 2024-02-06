@@ -440,7 +440,22 @@ void Game::init()
 
     initSwapChain(vSync);
 
-    mipMapGenerator.init(device);
+    { // create fullscreen triangle shader module
+        auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
+        shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
+        shaderCodeDesc.code = fullscreenTriangleShaderSource;
+
+        const auto shaderDesc = wgpu::ShaderModuleDescriptor{
+            .nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&shaderCodeDesc),
+            .label = "fullscreen triangle",
+        };
+
+        fullscreenTriangleShaderModule = device.CreateShaderModule(&shaderDesc);
+        fullscreenTriangleShaderModule.GetCompilationInfo(
+            util::defaultShaderCompilationCallback, (void*)"fullscreen triangle");
+    }
+
+    mipMapGenerator.init(device, fullscreenTriangleShaderModule);
 
     { // create depth dexture
         const auto textureDesc = wgpu::TextureDescriptor{
@@ -526,32 +541,9 @@ void Game::init()
         emptyStorageBuffer = device.CreateBuffer(&bufferDesc);
     }
 
-    { // create fullscreen triangle shader module
-        auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
-        shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
-        shaderCodeDesc.code = fullscreenTriangleShaderSource;
-
-        const auto shaderDesc = wgpu::ShaderModuleDescriptor{
-            .nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&shaderCodeDesc),
-            .label = "fullscreen triangle",
-        };
-
-        fullscreenTriangleShaderModule = device.CreateShaderModule(&shaderDesc);
-        fullscreenTriangleShaderModule.GetCompilationInfo(
-            util::defaultShaderCompilationCallback, (void*)"fullscreen triangle");
-    }
-
     initCamera();
 
     screenTextureFormat = wgpu::TextureFormat::RGBA16Float;
-
-    createMeshDrawingPipeline();
-    createSkyboxDrawingPipeline();
-    createSpriteDrawingPipeline();
-    createPostFXDrawingPipeline();
-
-    initSceneData();
-
     { // create screen texture
         const auto textureDesc = wgpu::TextureDescriptor{
             .label = "screen",
@@ -577,6 +569,13 @@ void Game::init()
         screenTextureView = screenTexture.createView();
     }
 
+    createMeshDrawingPipeline();
+    createSkyboxDrawingPipeline();
+    createSpriteDrawingPipeline();
+    createPostFXDrawingPipeline();
+
+    initSceneData();
+
     { // create bind group for postFX
         const std::array<wgpu::BindGroupEntry, 3> bindings{{
             {
@@ -599,6 +598,26 @@ void Game::init()
         };
         postFXBindGroup = device.CreateBindGroup(&bindGroupDesc);
     }
+
+    const auto catoScene = loadScene("assets/models/cato.gltf");
+    createEntitiesFromScene(catoScene);
+
+    const auto yaeScene = loadScene("assets/models/yae.gltf");
+    createEntitiesFromScene(yaeScene);
+
+    const auto levelScene = loadScene("assets/levels/city/city.gltf");
+    // const auto levelScene = loadScene("assets/levels/house/house.gltf");
+    createEntitiesFromScene(levelScene);
+
+    const glm::vec3 yaePos{1.4f, 0.f, -2.f};
+    auto& yae = findEntityByName("yae_mer");
+    yae.transform.position = yaePos;
+
+    const glm::vec3 catoPos{1.4f, 0.0f, 0.f};
+    auto& cato = findEntityByName("Cato");
+    cato.transform.position = catoPos;
+
+    createSprite(sprite, "assets/textures/tree.png");
 
     // load skybox
     {
@@ -634,26 +653,6 @@ void Game::init()
         };
         skyboxBindGroup = device.CreateBindGroup(&bindGroupDesc);
     }
-
-    const auto catoScene = loadScene("assets/models/cato.gltf");
-    createEntitiesFromScene(catoScene);
-
-    const auto yaeScene = loadScene("assets/models/yae.gltf");
-    createEntitiesFromScene(yaeScene);
-
-    const auto levelScene = loadScene("assets/levels/city/city.gltf");
-    // const auto levelScene = loadScene("assets/levels/house/house.gltf");
-    createEntitiesFromScene(levelScene);
-
-    const glm::vec3 yaePos{1.4f, 0.f, -2.f};
-    auto& yae = findEntityByName("yae_mer");
-    yae.transform.position = yaePos;
-
-    const glm::vec3 catoPos{1.4f, 0.0f, 0.f};
-    auto& cato = findEntityByName("Cato");
-    cato.transform.position = catoPos;
-
-    createSprite(sprite, "assets/textures/tree.png");
 
     initImGui();
 }
