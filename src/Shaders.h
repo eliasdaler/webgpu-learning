@@ -1,11 +1,13 @@
 #pragma once
 
+#include <string>
+
 // Will move them all to files... eventually
 
 namespace
 {
 
-const char* meshDrawVertexShaderSource = R"(
+const char* meshShadersCommonDefs = R"(
 struct PerFrameData {
     viewProj: mat4x4f,
     invViewProj: mat4x4f,
@@ -23,13 +25,26 @@ struct CSMData {
     lightSpaceTMs: array<mat4x4f, 4>,
 };
 
-@group(0) @binding(0) var<uniform> fd: PerFrameData;
-@group(0) @binding(1) var<uniform> dirLight: DirectionalLight;
-@group(0) @binding(2) var<uniform> csmData: CSMData;
-
 struct MeshData {
     model: mat4x4f,
 };
+
+struct MaterialData {
+    baseColor: vec4f,
+};
+
+struct VertexOutput {
+    @builtin(position) position: vec4f,
+    @location(0) pos: vec3f,
+    @location(1) normal: vec3f,
+    @location(2) uv: vec2f,
+};
+)";
+
+const std::string meshDrawVertexShaderSource = std::string(meshShadersCommonDefs) + R"(
+@group(0) @binding(0) var<uniform> fd: PerFrameData;
+@group(0) @binding(1) var<uniform> dirLight: DirectionalLight;
+@group(0) @binding(2) var<uniform> csmData: CSMData;
 
 @group(2) @binding(0) var<uniform> meshData: MeshData;
 @group(2) @binding(1) var<storage, read> jointMatrices: array<mat4x4f>;
@@ -61,13 +76,6 @@ fn calculateWorldPos(vertexIndex: u32, pos: vec4f) -> vec4f {
     return meshData.model * skinMatrix * pos;
 }
 
-struct VertexOutput {
-    @builtin(position) position: vec4f,
-    @location(0) pos: vec3f,
-    @location(1) normal: vec3f,
-    @location(2) uv: vec2f,
-};
-
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     let pos = positions[vertexIndex];
@@ -87,31 +95,10 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 }
 )";
 
-const char* meshDrawFragmentShaderSource = R"(
-struct PerFrameData {
-    viewProj: mat4x4f,
-    invViewProj: mat4x4f,
-    cameraPos: vec4f,
-    pixelSize: vec2f,
-};
-
-struct DirectionalLight {
-    directionAndMisc: vec4f,
-    colorAndIntensity: vec4f,
-};
-
-struct CSMData {
-    cascadeFarPlaneZs: vec4f,
-    lightSpaceTMs: array<mat4x4f, 4>,
-};
-
+const std::string meshDrawFragmentShaderSource = std::string(meshShadersCommonDefs) + R"(
 @group(0) @binding(0) var<uniform> fd: PerFrameData;
 @group(0) @binding(1) var<uniform> dirLight: DirectionalLight;
 @group(0) @binding(2) var<uniform> csmData: CSMData;
-
-struct MaterialData {
-    baseColor: vec4f,
-};
 
 @group(1) @binding(0) var<uniform> md: MaterialData;
 @group(1) @binding(1) var texture: texture_2d<f32>;
@@ -133,13 +120,6 @@ fn blinnPhongBRDF(diffuse: vec3f, n: vec3f, v: vec3f, l: vec3f, h: vec3f) -> vec
 
     return Fd + Fr;
 }
-
-struct VertexOutput {
-    @builtin(position) position: vec4f,
-    @location(0) pos: vec3f,
-    @location(1) normal: vec3f,
-    @location(2) uv: vec2f,
-};
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {

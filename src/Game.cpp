@@ -497,7 +497,7 @@ void Game::createMeshDrawingPipeline()
     { // create vertex shader module
         auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
         shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
-        shaderCodeDesc.code = meshDrawVertexShaderSource;
+        shaderCodeDesc.code = meshDrawVertexShaderSource.c_str();
 
         const auto shaderDesc = wgpu::ShaderModuleDescriptor{
             .nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&shaderCodeDesc),
@@ -512,7 +512,7 @@ void Game::createMeshDrawingPipeline()
     { // create fragment shader module
         auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
         shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
-        shaderCodeDesc.code = meshDrawFragmentShaderSource;
+        shaderCodeDesc.code = meshDrawFragmentShaderSource.c_str();
 
         const auto shaderDesc = wgpu::ShaderModuleDescriptor{
             .nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&shaderCodeDesc),
