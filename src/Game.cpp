@@ -7,6 +7,9 @@
 #include <util/SDLWebGPU.h>
 #include <util/WebGPUUtil.h>
 
+#include <Graphics/FrustumCulling.h>
+#include <Graphics/ShadowMapping.h>
+
 #include <SDL.h>
 
 #include <cstdint>
@@ -72,8 +75,14 @@ struct DirectionalLight {
     colorAndIntensity: vec4f,
 };
 
+struct CSMData {
+    cascadeFarPlaneZs: vec4f,
+    lightSpaceTMs: array<mat4x4f, 4>,
+};
+
 @group(0) @binding(0) var<uniform> fd: PerFrameData;
 @group(0) @binding(1) var<uniform> dirLight: DirectionalLight;
+@group(0) @binding(2) var<uniform> csmData: CSMData;
 
 struct MeshData {
     model: mat4x4f,
@@ -691,7 +700,7 @@ void Game::initSceneData()
 
         directionalLightBuffer = device.CreateBuffer(&bufferDesc);
 
-        const auto lightDir = glm::normalize(glm::vec3{-0.5, -0.7, -1});
+        const auto lightDir = sunLightDir;
         const auto lightColor = glm::vec3{1.0, 0.75, 0.38};
         const auto lightIntensity = 1.0f;
 
@@ -702,8 +711,18 @@ void Game::initSceneData()
         queue.WriteBuffer(directionalLightBuffer, 0, &dirLightData, sizeof(DirectionalLightData));
     }
 
+    { // CSM data
+        const auto bufferDesc = wgpu::BufferDescriptor{
+            .label = "CSM data buffer",
+            .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
+            .size = sizeof(CSMData),
+        };
+
+        csmDataBuffer = device.CreateBuffer(&bufferDesc);
+    }
+
     { // per frame data
-        const std::array<wgpu::BindGroupEntry, 2> bindings{{
+        const std::array<wgpu::BindGroupEntry, 3> bindings{{
             {
                 .binding = 0,
                 .buffer = frameDataBuffer,
@@ -711,6 +730,10 @@ void Game::initSceneData()
             {
                 .binding = 1,
                 .buffer = directionalLightBuffer,
+            },
+            {
+                .binding = 2,
+                .buffer = csmDataBuffer,
             },
         }};
         const auto bindGroupDesc = wgpu::BindGroupDescriptor{
@@ -740,8 +763,9 @@ void Game::createMeshDrawingPipeline()
     }
 
     { // per frame data layout
-        const std::array<wgpu::BindGroupLayoutEntry, 2> bindGroupLayoutEntries{{
+        const std::array<wgpu::BindGroupLayoutEntry, 3> bindGroupLayoutEntries{{
             {
+                // fd: PerFrameData
                 .binding = 0,
                 .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
                 .buffer =
@@ -750,8 +774,18 @@ void Game::createMeshDrawingPipeline()
                     },
             },
             {
+                // dirLight: DirectionalLight
                 .binding = 1,
                 .visibility = wgpu::ShaderStage::Fragment,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::Uniform,
+                    },
+            },
+            {
+                // csmData: CSMData
+                .binding = 2,
+                .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
                 .buffer =
                     {
                         .type = wgpu::BufferBindingType::Uniform,
@@ -770,6 +804,7 @@ void Game::createMeshDrawingPipeline()
     { // material data layout
         const std::array<wgpu::BindGroupLayoutEntry, 3> bindGroupLayoutEntries{{
             {
+                // md: MaterialData
                 .binding = 0,
                 .visibility = wgpu::ShaderStage::Fragment,
                 .buffer =
@@ -778,6 +813,7 @@ void Game::createMeshDrawingPipeline()
                     },
             },
             {
+                // texture: texture_2d<f32>
                 .binding = 1,
                 .visibility = wgpu::ShaderStage::Fragment,
                 .texture =
@@ -787,6 +823,7 @@ void Game::createMeshDrawingPipeline()
                     },
             },
             {
+                // texSampler: sampler
                 .binding = 2,
                 .visibility = wgpu::ShaderStage::Fragment,
                 .sampler =
@@ -807,7 +844,7 @@ void Game::createMeshDrawingPipeline()
     { // mesh data layout
         std::vector<wgpu::BindGroupLayoutEntry> bindGroupLayoutEntries{{
             {
-                // mesh data
+                // meshDat: MeshData
                 .binding = 0,
                 .visibility = wgpu::ShaderStage::Vertex,
                 .buffer =
@@ -816,7 +853,7 @@ void Game::createMeshDrawingPipeline()
                     },
             },
             {
-                // jointMatrices
+                // jointMatrices: array<mat4x4f>
                 .binding = 1,
                 .visibility = wgpu::ShaderStage::Vertex,
                 .buffer =
@@ -826,6 +863,7 @@ void Game::createMeshDrawingPipeline()
             },
         }};
 
+        // mesh attributes
         for (std::uint32_t i = 0; i < 6; ++i) {
             bindGroupLayoutEntries.push_back({
                 .binding = 2 + i,
@@ -1594,6 +1632,7 @@ void Game::update(float dt)
     }
 
     updateEntityTransforms();
+    updateCSMFrustums(camera);
 
     updateDevTools(dt);
 }
@@ -1636,6 +1675,48 @@ void Game::updateEntityTransforms(Entity& e, const glm::mat4& parentWorldTransfo
         auto& child = *entities[childId];
         updateEntityTransforms(child, e.worldTransform);
     }
+}
+
+void Game::updateCSMFrustums(const Camera& camera) const
+{
+    // create subfustrum by copying everything about the main camera,
+    // but changing zFar
+    Camera subFrustumCamera;
+    subFrustumCamera.setPosition(camera.getPosition());
+    subFrustumCamera.setHeading(camera.getHeading());
+
+    std::array<float, NUM_SHADOW_CASCADES> percents{0.1f, 0.3f, 0.8f, 1.f};
+    if (camera.getZFar() > 100.f) {
+        percents = {0.01f, 0.1f, 0.3f, 1.f};
+    }
+
+    std::array<float, NUM_SHADOW_CASCADES> cascadeFarPlaneZs{};
+    std::array<glm::mat4, NUM_SHADOW_CASCADES> csmLightSpaceTMs{};
+
+    for (std::size_t i = 0; i < NUM_SHADOW_CASCADES; ++i) {
+        float zNear = i == 0 ? camera.getZNear() : camera.getZNear() * percents[i - 1];
+        float zFar = camera.getZFar() * percents[i];
+        cascadeFarPlaneZs[i] = zFar;
+
+        subFrustumCamera.init(camera.getFOVX(), zNear, zFar, 1.f);
+
+        const auto corners =
+            edge::calculateFrustumCornersWorldSpace(subFrustumCamera.getViewProj());
+        const auto csmCamera = calculateCSMCamera(corners, sunLightDir, cascadedShadowMapSize);
+        csmLightSpaceTMs[i] = csmCamera.getViewProj();
+    }
+
+    const auto csmData = CSMData{
+        .cascadeFarPlaneZs =
+            {
+                cascadeFarPlaneZs[0],
+                cascadeFarPlaneZs[1],
+                cascadeFarPlaneZs[2],
+                cascadeFarPlaneZs[3],
+            },
+        .lightSpaceTMs = csmLightSpaceTMs,
+    };
+    queue.WriteBuffer(csmDataBuffer, 0, &csmData, sizeof(CSMData));
 }
 
 namespace

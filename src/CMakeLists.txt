@@ -2,8 +2,10 @@ add_executable(game
   Math/Transform.cpp
 
   Graphics/Camera.cpp
+  Graphics/FrustumCulling.cpp
   Graphics/Mesh.cpp
   Graphics/MipMapGenerator.cpp
+  Graphics/ShadowMapping.cpp
   Graphics/Skeleton.cpp
   Graphics/SkeletonAnimator.cpp
   Graphics/Texture.cpp

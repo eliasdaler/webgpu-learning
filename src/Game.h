@@ -97,6 +97,8 @@ private:
     void updateEntityTransforms();
     void updateEntityTransforms(Entity& e, const glm::mat4& parentWorldTransform);
 
+    void updateCSMFrustums(const Camera& camera) const;
+
     void generateDrawList();
     void sortDrawList();
 
@@ -219,4 +221,16 @@ private:
     wgpu::BindGroup postFXBindGroup;
 
     wgpu::ShaderModule fullscreenTriangleShaderModule;
+
+    static const std::size_t NUM_SHADOW_CASCADES = 4;
+    float cascadedShadowMapSize{4096.f};
+
+    struct CSMData {
+        glm::vec4 cascadeFarPlaneZs;
+        std::array<glm::mat4, 4> lightSpaceTMs;
+    };
+    wgpu::Buffer csmDataBuffer;
+
+    // TODO: read from scene
+    glm::vec3 sunLightDir{-0.5, -0.7, -1};
 };
