@@ -13,4 +13,5 @@ struct Texture {
 
     wgpu::TextureView createView() const;
     wgpu::TextureView createView(int baseMipLevel, int count) const;
+    wgpu::TextureView createViewForCubeLayer(int baseMipLevel, int count, int layer) const;
 };

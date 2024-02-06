@@ -262,19 +262,21 @@ Texture loadCubemap(
         copyTextureToGPU(ctx, data, texture, origin);
 
         ++face;
-
-        if (face == 6) {
-            break;
-        }
     }
 
-    return Texture{
+    auto tex = Texture{
         .texture = texture,
         .mipLevelCount = mipLevelCount,
         .size = {faceWidth, faceHeight},
         .format = format,
         .isCubemap = true,
     };
+
+    if (generateMips) {
+        ctx.mipMapGenerator.generateMips(ctx.device, ctx.queue, tex);
+    }
+
+    return tex;
 }
 
 } // end of namespace util

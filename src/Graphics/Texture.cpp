@@ -18,3 +18,18 @@ wgpu::TextureView Texture::createView(int baseMipLevel, int count) const
     };
     return texture.CreateView(&textureViewDesc);
 }
+
+wgpu::TextureView Texture::createViewForCubeLayer(int baseMipLevel, int count, int layer) const
+{
+    assert(isCubemap);
+    const auto textureViewDesc = wgpu::TextureViewDescriptor{
+        .format = format,
+        .dimension = wgpu::TextureViewDimension::e2D,
+        .baseMipLevel = (std::uint32_t)baseMipLevel,
+        .mipLevelCount = (std::uint32_t)count,
+        .baseArrayLayer = (std::uint32_t)layer,
+        .arrayLayerCount = 1u,
+        .aspect = wgpu::TextureAspect::All,
+    };
+    return texture.CreateView(&textureViewDesc);
+}

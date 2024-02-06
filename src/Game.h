@@ -117,7 +117,8 @@ private:
     wgpu::Queue queue;
 
     wgpu::Sampler nearestSampler;
-    wgpu::Sampler linearSampler;
+    wgpu::Sampler bilinearSampler;
+    wgpu::Sampler anisotropicSampler;
 
     wgpu::BindGroup perFrameBindGroup;
 

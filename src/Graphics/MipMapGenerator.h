@@ -22,6 +22,14 @@ private:
         const wgpu::Device& device,
         wgpu::TextureFormat format);
 
+    void generateMip(
+        const wgpu::Device& device,
+        const wgpu::Queue& queue,
+        const wgpu::CommandEncoder& encoder,
+        const wgpu::RenderPipeline pipeline,
+        const wgpu::TextureView& inputView,
+        const wgpu::TextureView& outputView) const;
+
     wgpu::ShaderModule shaderModule;
     wgpu::BindGroupLayout textureGroupLayout;
     wgpu::Sampler linearSampler;

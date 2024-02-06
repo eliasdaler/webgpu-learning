@@ -246,34 +246,24 @@ struct VSOutput {
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex : u32) -> VSOutput {
-    let pos = array(
-        vec2f(-1.0f, -1.0f),
-        vec2f(3.0f, -1.0f),
-        vec2f(-1.0f, 3.0f),
-    );
-
     var vsOutput: VSOutput;
-    let xy = pos[vertexIndex];
-    vsOutput.position = vec4f(xy * 2.0 - 1.0, 0.0, 1.0);
-    vsOutput.uv = vec2f(xy.x, 1.0 - xy.y);
+    vsOutput.uv = vec2(f32((vertexIndex << 1) & 2), f32(vertexIndex & 2));
+    vsOutput.position = vec4f(vsOutput.uv * 2.0 - 1.0, 0.0, 1.0);
     return vsOutput;
 }
 
 @group(0) @binding(0) var<uniform> fd: PerFrameData;
-@group(0) @binding(1) var ourTexture: texture_cube<f32>;
-@group(0) @binding(2) var ourSampler: sampler;
+@group(0) @binding(1) var texture: texture_cube<f32>;
+@group(0) @binding(2) var texSampler: sampler;
 
 @fragment
 fn fs_main(fsInput: VSOutput) -> @location(0) vec4f {
-    var uv = fsInput.position.xy * fd.pixelSize;
-    uv.y = 1 - uv.y;
-
-    let ndc = uv * 2.0 - vec2(1.0);
+    let ndc = fsInput.uv * 2.0 - vec2(1.0);
 
     let coord = fd.invViewProj * vec4(ndc, 1.0, 1.0);
     let samplePoint = normalize(coord.xyz / vec3(coord.w));
 
-    let textureColor = textureSample(ourTexture, ourSampler, samplePoint);
+    let textureColor = textureSample(texture, texSampler, samplePoint);
 
     // FIXME: this won't be needed after gamma correction step is added
     let color = pow(textureColor.rgb, vec3(1/2.2f));
@@ -468,10 +458,21 @@ void Game::init()
             .addressModeV = wgpu::AddressMode::Repeat,
             .magFilter = wgpu::FilterMode::Linear,
             .minFilter = wgpu::FilterMode::Linear,
-            .mipmapFilter = wgpu::MipmapFilterMode::Linear,
-            .maxAnisotropy = 16, // TODO: allow to set anisotropy?
+            .mipmapFilter = wgpu::MipmapFilterMode::Nearest,
         };
-        linearSampler = device.CreateSampler(&samplerDesc);
+        bilinearSampler = device.CreateSampler(&samplerDesc);
+    }
+
+    {
+        const auto samplerDesc = wgpu::SamplerDescriptor{
+            .addressModeU = wgpu::AddressMode::Repeat,
+            .addressModeV = wgpu::AddressMode::Repeat,
+            .magFilter = wgpu::FilterMode::Linear,
+            .minFilter = wgpu::FilterMode::Linear,
+            .mipmapFilter = wgpu::MipmapFilterMode::Linear,
+            .maxAnisotropy = 8, // TODO: allow to set anisotropy?
+        };
+        anisotropicSampler = device.CreateSampler(&samplerDesc);
     }
 
     {
@@ -490,16 +491,6 @@ void Game::init()
 
     initSceneData();
 
-    const auto catoScene = loadScene("assets/models/cato.gltf");
-    createEntitiesFromScene(catoScene);
-
-    const auto yaeScene = loadScene("assets/models/yae.gltf");
-    createEntitiesFromScene(yaeScene);
-
-    const auto levelScene = loadScene("assets/levels/city/city.gltf");
-    // const auto levelScene = loadScene("assets/levels/house/house.gltf");
-    createEntitiesFromScene(levelScene);
-
     // load skybox
     {
         const auto loadCtx = util::TextureLoadContext{
@@ -508,7 +499,7 @@ void Game::init()
             .mipMapGenerator = mipMapGenerator,
         };
         skyboxTexture =
-            util::loadCubemap(loadCtx, "assets/textures/skybox/distant_sunset", false, "skybox");
+            util::loadCubemap(loadCtx, "assets/textures/skybox/distant_sunset", true, "skybox");
         assert(skyboxTexture.isCubemap);
 
         // create bind group
@@ -524,7 +515,7 @@ void Game::init()
             },
             {
                 .binding = 2,
-                .sampler = linearSampler,
+                .sampler = bilinearSampler,
             },
         }};
         const auto bindGroupDesc = wgpu::BindGroupDescriptor{
@@ -534,6 +525,16 @@ void Game::init()
         };
         skyboxBindGroup = device.CreateBindGroup(&bindGroupDesc);
     }
+
+    const auto catoScene = loadScene("assets/models/cato.gltf");
+    createEntitiesFromScene(catoScene);
+
+    const auto yaeScene = loadScene("assets/models/yae.gltf");
+    createEntitiesFromScene(yaeScene);
+
+    const auto levelScene = loadScene("assets/levels/city/city.gltf");
+    // const auto levelScene = loadScene("assets/levels/house/house.gltf");
+    createEntitiesFromScene(levelScene);
 
     const glm::vec3 yaePos{1.4f, 0.f, -2.f};
     auto& yae = findEntityByName("yae_mer");
@@ -816,7 +817,7 @@ Scene Game::loadScene(const std::filesystem::path& path)
         .queue = queue,
         .materialLayout = materialGroupLayout,
         .nearestSampler = nearestSampler,
-        .linearSampler = linearSampler,
+        .linearSampler = anisotropicSampler,
         .whiteTexture = whiteTexture,
         .mipMapGenerator = mipMapGenerator,
         .materialCache = materialCache,
