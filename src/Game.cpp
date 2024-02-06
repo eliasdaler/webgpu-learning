@@ -321,6 +321,8 @@ void Game::init()
     }
 
     createMeshDrawingPipeline();
+    createMeshDepthOnlyDrawingPipeline();
+
     createSkyboxDrawingPipeline();
     createSpriteDrawingPipeline();
     createPostFXDrawingPipeline();
@@ -709,6 +711,106 @@ void Game::createMeshDrawingPipeline()
         pipelineDesc.fragment = &fragmentState;
 
         meshPipeline = device.CreateRenderPipeline(&pipelineDesc);
+    }
+}
+
+void Game::createMeshDepthOnlyDrawingPipeline()
+{
+    { // create vertex shader module
+        auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
+        shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
+        shaderCodeDesc.code = meshDrawVertexShaderSource.c_str();
+
+        const auto shaderDesc = wgpu::ShaderModuleDescriptor{
+            .nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&shaderCodeDesc),
+            .label = "mesh vertex",
+        };
+
+        meshVertexShaderModule = device.CreateShaderModule(&shaderDesc);
+        meshVertexShaderModule
+            .GetCompilationInfo(util::defaultShaderCompilationCallback, (void*)"mesh vertex");
+    }
+
+    { // create fragment shader module
+        auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
+        shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
+        shaderCodeDesc.code = meshDrawFragmentDepthOnlyShaderSource.c_str();
+
+        const auto shaderDesc = wgpu::ShaderModuleDescriptor{
+            .nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&shaderCodeDesc),
+            .label = "mesh fragment (depth only)",
+        };
+
+        meshFragmentDepthOnlyShaderModule = device.CreateShaderModule(&shaderDesc);
+        meshFragmentDepthOnlyShaderModule.GetCompilationInfo(
+            util::defaultShaderCompilationCallback, (void*)"mesh fragment (depth only)");
+    }
+
+    {
+        // reused from normal mesh pipeline
+        std::array<wgpu::BindGroupLayout, 3> groupLayouts{
+            perFrameDataGroupLayout,
+            materialGroupLayout,
+            meshGroupLayout,
+        };
+        const wgpu::PipelineLayoutDescriptor layoutDesc{
+            .bindGroupLayoutCount = groupLayouts.size(),
+            .bindGroupLayouts = groupLayouts.data(),
+        };
+        wgpu::RenderPipelineDescriptor pipelineDesc{
+            .label = "mesh draw pipeline",
+            .layout = device.CreatePipelineLayout(&layoutDesc),
+            .primitive =
+                {
+                    .topology = wgpu::PrimitiveTopology::TriangleList,
+                    .frontFace = wgpu::FrontFace::CCW,
+                    .cullMode = wgpu::CullMode::Back,
+                },
+        };
+
+        const auto depthStencilState = wgpu::DepthStencilState{
+            .format = depthTextureFormat,
+            .depthWriteEnabled = true,
+            .depthCompare = wgpu::CompareFunction::Less,
+        };
+
+        pipelineDesc.depthStencil = &depthStencilState;
+
+        pipelineDesc.vertex = wgpu::VertexState{
+            .module = meshVertexShaderModule,
+            .entryPoint = "vs_main",
+            .bufferCount = 0,
+        };
+
+        // fragment
+        const auto blendState = wgpu::BlendState{
+            .color =
+                {
+                    .operation = wgpu::BlendOperation::Add,
+                    .srcFactor = wgpu::BlendFactor::SrcAlpha,
+                    .dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha,
+                },
+            .alpha = {
+                .operation = wgpu::BlendOperation::Add,
+                .srcFactor = wgpu::BlendFactor::Zero,
+                .dstFactor = wgpu::BlendFactor::One,
+            }};
+
+        const auto colorTarget = wgpu::ColorTargetState{
+            .format = screenTextureFormat,
+            .blend = &blendState,
+            .writeMask = wgpu::ColorWriteMask::All,
+        };
+
+        const auto fragmentState = wgpu::FragmentState{
+            .module = meshFragmentDepthOnlyShaderModule,
+            .entryPoint = "fs_main",
+            .targetCount = 1,
+            .targets = &colorTarget,
+        };
+        pipelineDesc.fragment = &fragmentState;
+
+        meshDepthOnlyPipeline = device.CreateRenderPipeline(&pipelineDesc);
     }
 }
 

@@ -80,6 +80,7 @@ private:
     void initCamera();
     void initSceneData();
     void createMeshDrawingPipeline();
+    void createMeshDepthOnlyDrawingPipeline();
     void createSkyboxDrawingPipeline();
     void createSpriteDrawingPipeline();
     void createPostFXDrawingPipeline();
@@ -127,10 +128,13 @@ private:
 
     wgpu::ShaderModule meshVertexShaderModule;
     wgpu::ShaderModule meshFragmentShaderModule;
+    wgpu::ShaderModule meshFragmentDepthOnlyShaderModule;
+
     wgpu::BindGroupLayout perFrameDataGroupLayout;
     wgpu::BindGroupLayout materialGroupLayout;
     wgpu::BindGroupLayout meshGroupLayout;
     wgpu::RenderPipeline meshPipeline;
+    wgpu::RenderPipeline meshDepthOnlyPipeline;
 
     struct PerFrameData {
         glm::mat4 viewProj;
