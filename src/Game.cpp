@@ -231,6 +231,29 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 )";
 
 const char* skyboxShaderSource = R"(
+struct VSOutput {
+  @builtin(position) position: vec4f,
+  @location(0) uv: vec2f,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertexIndex : u32) -> VSOutput {
+    let pos = array(
+        vec2f(-1.0, 1.0),
+        vec2f(-1.0, -3.0),
+        vec2f(3.0, 1.0f),
+    );
+    let uv = array(
+        vec2f(0, 0),
+        vec2f(0, 2),
+        vec2f(2, 0),
+    );
+
+    var vsOutput: VSOutput;
+    vsOutput.position = vec4(pos[vertexIndex], 0.0, 1.0);
+    vsOutput.uv = uv[vertexIndex];
+    return vsOutput;
+}
 
 struct PerFrameData {
     viewProj: mat4x4f,
@@ -239,26 +262,14 @@ struct PerFrameData {
     pixelSize: vec2f,
 };
 
-struct VSOutput {
-  @builtin(position) position: vec4f,
-  @location(0) uv: vec2f,
-};
-
-@vertex
-fn vs_main(@builtin(vertex_index) vertexIndex : u32) -> VSOutput {
-    var vsOutput: VSOutput;
-    vsOutput.uv = vec2(f32((vertexIndex << 1) & 2), f32(vertexIndex & 2));
-    vsOutput.position = vec4f(vsOutput.uv * 2.0 - 1.0, 0.0, 1.0);
-    return vsOutput;
-}
-
 @group(0) @binding(0) var<uniform> fd: PerFrameData;
 @group(0) @binding(1) var texture: texture_cube<f32>;
 @group(0) @binding(2) var texSampler: sampler;
 
 @fragment
 fn fs_main(fsInput: VSOutput) -> @location(0) vec4f {
-    let ndc = fsInput.uv * 2.0 - vec2(1.0);
+    var ndc = fsInput.uv * 2.0 - vec2(1.0);
+    ndc.y = -ndc.y;
 
     let coord = fd.invViewProj * vec4(ndc, 1.0, 1.0);
     let samplePoint = normalize(coord.xyz / vec3(coord.w));

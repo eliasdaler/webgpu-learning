@@ -13,17 +13,19 @@ struct VSOutput {
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex : u32) -> VSOutput {
     let pos = array(
-        vec2f(-1.0f, -1.0f),
-        vec2f(3.0f, -1.0f),
-        vec2f(-1.0f, 3.0f),
+        vec2f(-1.0, 1.0),
+        vec2f(-1.0, -3.0),
+        vec2f(3.0, 1.0f),
+    );
+    let uv = array(
+        vec2f(0, 0),
+        vec2f(0, 2),
+        vec2f(2, 0),
     );
 
     var vsOutput: VSOutput;
-    let xy = pos[vertexIndex];
-
-    vsOutput.position = vec4f(xy * 2.0 - 1.0, 0.0, 1.0);
-    vsOutput.uv = vec2f(xy.x, 1.0 - xy.y);
-
+    vsOutput.position = vec4(pos[vertexIndex], 0.0, 1.0);
+    vsOutput.uv = uv[vertexIndex];
     return vsOutput;
 }
 
