@@ -236,6 +236,9 @@ private:
     };
     wgpu::Buffer csmDataBuffer;
 
+    wgpu::Texture csmShadowMap;
+    wgpu::TextureView csmShadowMapView;
+
     // TODO: read from scene
     glm::vec3 sunLightDir{-0.5, -0.7, -1};
 };

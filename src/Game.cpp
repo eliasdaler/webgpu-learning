@@ -224,22 +224,19 @@ void Game::init()
             .sampleCount = 1,
         };
         depthTexture = device.CreateTexture(&textureDesc);
-    }
 
-    { // create depth texture view
+        // create depth texture view
         const auto textureViewDesc = wgpu::TextureViewDescriptor{
             .format = depthTextureFormat,
             .dimension = wgpu::TextureViewDimension::e2D,
             .baseMipLevel = 0,
             .mipLevelCount = 1,
-            .baseArrayLayer = 0,
-            .arrayLayerCount = 1,
             .aspect = wgpu::TextureAspect::DepthOnly,
         };
         depthTextureView = depthTexture.CreateView(&textureViewDesc);
     }
 
-    {
+    { // create 1px white texture
         const auto loadCtx = util::TextureLoadContext{
             .device = device,
             .queue = queue,
@@ -250,7 +247,7 @@ void Game::init()
             util::createPixelTexture(loadCtx, wgpu::TextureFormat::RGBA8Unorm, whiteColor, "white");
     }
 
-    {
+    { // nearest sampler
         const auto samplerDesc = wgpu::SamplerDescriptor{
             .addressModeU = wgpu::AddressMode::Repeat,
             .addressModeV = wgpu::AddressMode::Repeat,
@@ -260,7 +257,7 @@ void Game::init()
         nearestSampler = device.CreateSampler(&samplerDesc);
     }
 
-    {
+    { // bilinear sampler
         const auto samplerDesc = wgpu::SamplerDescriptor{
             .addressModeU = wgpu::AddressMode::Repeat,
             .addressModeV = wgpu::AddressMode::Repeat,
@@ -271,7 +268,7 @@ void Game::init()
         bilinearSampler = device.CreateSampler(&samplerDesc);
     }
 
-    {
+    { // anisotropic sampler
         const auto samplerDesc = wgpu::SamplerDescriptor{
             .addressModeU = wgpu::AddressMode::Repeat,
             .addressModeV = wgpu::AddressMode::Repeat,
@@ -405,6 +402,33 @@ void Game::init()
             .entries = bindings.data(),
         };
         skyboxBindGroup = device.CreateBindGroup(&bindGroupDesc);
+    }
+
+    { // create CSM depth texture
+        const auto textureDesc = wgpu::TextureDescriptor{
+            .label = "depth texture",
+            .usage = wgpu::TextureUsage::RenderAttachment,
+            .dimension = wgpu::TextureDimension::e2D,
+            .size =
+                {
+                    .width = static_cast<std::uint32_t>(params.screenWidth),
+                    .height = static_cast<std::uint32_t>(params.screenHeight),
+                    .depthOrArrayLayers = 1,
+                },
+            .format = depthTextureFormat,
+            .mipLevelCount = 1,
+            .sampleCount = 1,
+        };
+        csmShadowMap = device.CreateTexture(&textureDesc);
+        // create view
+        const auto textureViewDesc = wgpu::TextureViewDescriptor{
+            .format = depthTextureFormat,
+            .dimension = wgpu::TextureViewDimension::e2D,
+            .baseMipLevel = 0,
+            .mipLevelCount = 1,
+            .aspect = wgpu::TextureAspect::DepthOnly,
+        };
+        csmShadowMapView = depthTexture.CreateView(&textureViewDesc);
     }
 
     initImGui();
@@ -1687,6 +1711,66 @@ void Game::render()
 
     const auto commandEncoderDesc = wgpu::CommandEncoderDescriptor{};
     const auto encoder = device.CreateCommandEncoder(&commandEncoderDesc);
+
+    { // draw CSM
+        const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
+            .view = screenTextureView,
+            .loadOp = wgpu::LoadOp::Load,
+            .storeOp = wgpu::StoreOp::Store,
+            .clearValue = clearColor,
+        };
+
+        const auto depthStencilAttachment = wgpu::RenderPassDepthStencilAttachment{
+            .view = csmShadowMapView,
+            .depthLoadOp = wgpu::LoadOp::Clear,
+            .depthStoreOp = wgpu::StoreOp::Store,
+            .depthClearValue = 1.f,
+            .depthReadOnly = false,
+            // no stencil
+        };
+
+        const auto renderPassDesc = wgpu::RenderPassDescriptor{
+            .colorAttachmentCount = 1,
+            .colorAttachments = &mainScreenAttachment,
+            .depthStencilAttachment = &depthStencilAttachment,
+        };
+
+        {
+            ZoneScopedN("CSM render pass");
+
+            const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
+            renderPass.PushDebugGroup("Draw meshes to CSM");
+
+            renderPass.SetPipeline(meshDepthOnlyPipeline);
+            renderPass.SetBindGroup(0, perFrameBindGroup);
+
+            auto prevMaterialIdx = NULL_MATERIAL_ID;
+            auto prevMeshId = NULL_MESH_ID;
+
+            for (const auto& dcIdx : sortedDrawCommands) {
+                const auto& dc = drawCommands[dcIdx];
+
+                if (dc.mesh.materialId != prevMaterialIdx) {
+                    prevMaterialIdx = dc.mesh.materialId;
+                    const auto& material = materialCache.getMaterial(dc.mesh.materialId);
+                    renderPass.SetBindGroup(1, material.bindGroup);
+                }
+
+                renderPass.SetBindGroup(2, dc.meshBindGroup);
+
+                if (dc.meshId != prevMeshId) {
+                    prevMeshId = dc.meshId;
+                    renderPass.SetIndexBuffer(
+                        dc.mesh.indexBuffer, wgpu::IndexFormat::Uint16, 0, wgpu::kWholeSize);
+                }
+
+                renderPass.DrawIndexed(dc.mesh.indexBufferSize, 1, 0, 0, 0);
+            }
+
+            renderPass.PopDebugGroup();
+            renderPass.End();
+        }
+    }
 
     { // draw sky
         const auto mainScreenAttachment = wgpu::RenderPassColorAttachment{
