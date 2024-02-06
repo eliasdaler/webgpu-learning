@@ -226,7 +226,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 }
 )";
 
-const char* skyboxShaderSource = R"(
+const char* fullscreenTriangleShaderSource = R"(
 struct VSOutput {
   @builtin(position) position: vec4f,
   @location(0) uv: vec2f,
@@ -250,6 +250,13 @@ fn vs_main(@builtin(vertex_index) vertexIndex : u32) -> VSOutput {
     vsOutput.uv = uv[vertexIndex];
     return vsOutput;
 }
+)";
+
+const char* skyboxShaderSource = R"(
+struct VSOutput {
+  @builtin(position) position: vec4f,
+  @location(0) uv: vec2f,
+};
 
 struct PerFrameData {
     viewProj: mat4x4f,
@@ -282,25 +289,6 @@ struct VSOutput {
   @builtin(position) position: vec4f,
   @location(0) uv: vec2f,
 };
-
-@vertex
-fn vs_main(@builtin(vertex_index) vertexIndex : u32) -> VSOutput {
-    let pos = array(
-        vec2f(-1.0, -1.0),
-        vec2f(3.0, -1.0),
-        vec2f(-1.0, 3.0f),
-    );
-    let uv = array(
-        vec2f(0, 1),
-        vec2f(2, 1),
-        vec2f(0, -1),
-    );
-
-    var vsOutput: VSOutput;
-    vsOutput.position = vec4(pos[vertexIndex], 0.0, 1.0);
-    vsOutput.uv = uv[vertexIndex];
-    return vsOutput;
-}
 
 struct PerFrameData {
     viewProj: mat4x4f,
@@ -536,6 +524,21 @@ void Game::init()
             .size = 64, // D3D12 doesn't allow to create smaller buffers
         };
         emptyStorageBuffer = device.CreateBuffer(&bufferDesc);
+    }
+
+    { // create fullscreen triangle shader module
+        auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
+        shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
+        shaderCodeDesc.code = fullscreenTriangleShaderSource;
+
+        const auto shaderDesc = wgpu::ShaderModuleDescriptor{
+            .nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&shaderCodeDesc),
+            .label = "fullscreen triangle",
+        };
+
+        fullscreenTriangleShaderModule = device.CreateShaderModule(&shaderDesc);
+        fullscreenTriangleShaderModule.GetCompilationInfo(
+            util::defaultShaderCompilationCallback, (void*)"fullscreen triangle");
     }
 
     initCamera();
@@ -1154,7 +1157,7 @@ void Game::createSkyboxDrawingPipeline()
         };
 
         pipelineDesc.vertex = wgpu::VertexState{
-            .module = skyboxShaderModule,
+            .module = fullscreenTriangleShaderModule,
             .entryPoint = "vs_main",
             .bufferCount = 0,
         };
@@ -1251,7 +1254,7 @@ void Game::createPostFXDrawingPipeline()
         };
 
         pipelineDesc.vertex = wgpu::VertexState{
-            .module = postFXShaderModule,
+            .module = fullscreenTriangleShaderModule,
             .entryPoint = "vs_main",
             .bufferCount = 0,
         };

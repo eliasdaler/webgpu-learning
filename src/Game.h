@@ -217,4 +217,6 @@ private:
     wgpu::ShaderModule postFXShaderModule;
     wgpu::BindGroupLayout postFXScreenTextureGroupLayout;
     wgpu::BindGroup postFXBindGroup;
+
+    wgpu::ShaderModule fullscreenTriangleShaderModule;
 };
