@@ -13,14 +13,14 @@ struct VSOutput {
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex : u32) -> VSOutput {
     let pos = array(
-        vec2f(-1.0, 1.0),
-        vec2f(-1.0, -3.0),
-        vec2f(3.0, 1.0f),
+        vec2f(-1.0, -1.0),
+        vec2f(3.0, -1.0),
+        vec2f(-1.0, 3.0f),
     );
     let uv = array(
-        vec2f(0, 0),
-        vec2f(0, 2),
-        vec2f(2, 0),
+        vec2f(0, 1),
+        vec2f(2, 1),
+        vec2f(0, -1),
     );
 
     var vsOutput: VSOutput;

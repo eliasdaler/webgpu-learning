@@ -239,14 +239,14 @@ struct VSOutput {
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex : u32) -> VSOutput {
     let pos = array(
-        vec2f(-1.0, 1.0),
-        vec2f(-1.0, -3.0),
-        vec2f(3.0, 1.0f),
+        vec2f(-1.0, -1.0),
+        vec2f(3.0, -1.0),
+        vec2f(-1.0, 3.0f),
     );
     let uv = array(
-        vec2f(0, 0),
-        vec2f(0, 2),
-        vec2f(2, 0),
+        vec2f(0, 1),
+        vec2f(2, 1),
+        vec2f(0, -1),
     );
 
     var vsOutput: VSOutput;
@@ -268,11 +268,13 @@ struct PerFrameData {
 
 @fragment
 fn fs_main(fsInput: VSOutput) -> @location(0) vec4f {
-    var ndc = fsInput.uv * 2.0 - vec2(1.0);
-    ndc.y = -ndc.y;
+    let uv = fsInput.position.xy * fd.pixelSize;
+    var ndc = vec2(
+        uv.x * 2.0 - 1.0,
+        1.0 - 2.0 * uv.y);
 
     let coord = fd.invViewProj * vec4(ndc, 1.0, 1.0);
-    let samplePoint = normalize(coord.xyz / vec3(coord.w));
+    let samplePoint = normalize(coord.xyz / vec3(coord.w) - fd.cameraPos.xyz);
 
     let textureColor = textureSample(texture, texSampler, samplePoint);
 
