@@ -30,6 +30,23 @@ public:
         std::string windowTitle = "Game";
     };
 
+    struct PerFrameData {
+        glm::mat4 viewProj;
+        glm::mat4 invViewProj;
+        glm::vec4 cameraPos;
+        glm::vec2 pixelSize;
+        glm::vec2 padding; // T_T
+    };
+
+    struct MeshData {
+        glm::mat4 model;
+    };
+
+    struct DirectionalLightData {
+        glm::vec4 directionAndMisc; // [pos.x, pos.y, pos.z, unused]
+        glm::vec4 colorAndIntensity; // [color.r, color.g, color.b, intensity]
+    };
+
     static const std::size_t NULL_ENTITY_ID = std::numeric_limits<std::size_t>::max();
 
     using EntityId = std::size_t;
@@ -79,6 +96,7 @@ private:
     void initSwapChain(bool vSync);
     void initCamera();
     void initSceneData();
+
     void createMeshDrawingPipeline();
     void createMeshDepthOnlyDrawingPipeline();
     void createSkyboxDrawingPipeline();
@@ -134,23 +152,6 @@ private:
     wgpu::BindGroupLayout meshGroupLayout;
     wgpu::RenderPipeline meshPipeline;
     wgpu::RenderPipeline meshDepthOnlyPipeline;
-
-    struct PerFrameData {
-        glm::mat4 viewProj;
-        glm::mat4 invViewProj;
-        glm::vec4 cameraPos;
-        glm::vec2 pixelSize;
-        glm::vec2 padding; // T_T
-    };
-
-    struct MeshData {
-        glm::mat4 model;
-    };
-
-    struct DirectionalLightData {
-        glm::vec4 directionAndMisc; // [pos.x, pos.y, pos.z, unused]
-        glm::vec4 colorAndIntensity; // [color.r, color.g, color.b, intensity]
-    };
 
     wgpu::Buffer frameDataBuffer;
     wgpu::Buffer directionalLightBuffer;
@@ -237,6 +238,9 @@ private:
 
     wgpu::Texture csmShadowMap;
     wgpu::TextureView csmShadowMapView;
+    wgpu::TextureFormat csmShadowMapFormat;
+    std::array<wgpu::BindGroup, 4> csmBindGroups;
+    std::array<wgpu::Buffer, 4> csmPerFrameDataBuffers;
 
     // TODO: read from scene
     glm::vec3 sunLightDir{-0.5, -0.7, -1};

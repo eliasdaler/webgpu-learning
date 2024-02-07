@@ -64,6 +64,33 @@ void defaultValidationErrorHandler(WGPUErrorType type, char const* message, void
     std::exit(1);
 };
 
+void allocatePerFrameDataBuffer(const wgpu::Device& device, wgpu::Buffer& buffer)
+{
+    const auto bufferDesc = wgpu::BufferDescriptor{
+        .label = "per frame data buffer",
+        .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
+        .size = sizeof(Game::PerFrameData),
+    };
+
+    buffer = device.CreateBuffer(&bufferDesc);
+}
+
+void writePerFrameDataBuffer(
+    const wgpu::Queue& queue,
+    const wgpu::Buffer& buffer,
+    const glm::vec2& screenSize,
+    const Camera& camera)
+{
+    const auto viewProj = camera.getViewProj();
+    Game::PerFrameData ud{
+        .viewProj = viewProj,
+        .invViewProj = glm::inverse(viewProj),
+        .cameraPos = glm::vec4(camera.getPosition(), 1.f),
+        .pixelSize = glm::vec2(1.f) / screenSize,
+    };
+    queue.WriteBuffer(buffer, 0, &ud, sizeof(Game::PerFrameData));
+}
+
 } // end of anonymous namespace
 
 void Game::Params::validate()
@@ -318,6 +345,8 @@ void Game::init()
     }
 
     createMeshDrawingPipeline();
+
+    csmShadowMapFormat = wgpu::TextureFormat::Depth32Float;
     createMeshDepthOnlyDrawingPipeline();
 
     createSkyboxDrawingPipeline();
@@ -415,20 +444,21 @@ void Game::init()
                     .height = static_cast<std::uint32_t>(params.screenHeight),
                     .depthOrArrayLayers = 1,
                 },
-            .format = depthTextureFormat,
+            .format = csmShadowMapFormat,
             .mipLevelCount = 1,
             .sampleCount = 1,
         };
         csmShadowMap = device.CreateTexture(&textureDesc);
         // create view
         const auto textureViewDesc = wgpu::TextureViewDescriptor{
-            .format = depthTextureFormat,
+            .label = "CSM shadow map view",
+            .format = csmShadowMapFormat,
             .dimension = wgpu::TextureViewDimension::e2D,
             .baseMipLevel = 0,
             .mipLevelCount = 1,
             .aspect = wgpu::TextureAspect::DepthOnly,
         };
-        csmShadowMapView = depthTexture.CreateView(&textureViewDesc);
+        csmShadowMapView = csmShadowMap.CreateView(&textureViewDesc);
     }
 
     initImGui();
@@ -453,14 +483,17 @@ void Game::initSwapChain(bool vSync)
 
 void Game::initSceneData()
 {
-    { // per frame data buffer
+    // per frame data buffer
+    allocatePerFrameDataBuffer(device, frameDataBuffer);
+
+    { // CSM data
         const auto bufferDesc = wgpu::BufferDescriptor{
-            .label = "per frame data buffer",
+            .label = "CSM data buffer",
             .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
-            .size = sizeof(PerFrameData),
+            .size = sizeof(CSMData),
         };
 
-        frameDataBuffer = device.CreateBuffer(&bufferDesc);
+        csmDataBuffer = device.CreateBuffer(&bufferDesc);
     }
 
     { // dir light buffer
@@ -481,16 +514,6 @@ void Game::initSceneData()
             .colorAndIntensity = {lightColor, lightIntensity},
         };
         queue.WriteBuffer(directionalLightBuffer, 0, &dirLightData, sizeof(DirectionalLightData));
-    }
-
-    { // CSM data
-        const auto bufferDesc = wgpu::BufferDescriptor{
-            .label = "CSM data buffer",
-            .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
-            .size = sizeof(CSMData),
-        };
-
-        csmDataBuffer = device.CreateBuffer(&bufferDesc);
     }
 
     { // per frame data
@@ -515,6 +538,33 @@ void Game::initSceneData()
         };
 
         perFrameBindGroup = device.CreateBindGroup(&bindGroupDesc);
+    }
+
+    // CSM per frame data buffers
+    for (std::size_t i = 0; i < 4; ++i) {
+        allocatePerFrameDataBuffer(device, csmPerFrameDataBuffers[i]);
+
+        const std::array<wgpu::BindGroupEntry, 3> bindings{{
+            {
+                .binding = 0,
+                .buffer = csmPerFrameDataBuffers[i],
+            },
+            {
+                .binding = 1,
+                .buffer = directionalLightBuffer,
+            },
+            {
+                .binding = 2,
+                .buffer = csmDataBuffer,
+            },
+        }};
+        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
+            .layout = perFrameDataGroupLayout.Get(),
+            .entryCount = bindings.size(),
+            .entries = bindings.data(),
+        };
+
+        csmBindGroups[i] = device.CreateBindGroup(&bindGroupDesc);
     }
 }
 
@@ -767,7 +817,7 @@ void Game::createMeshDepthOnlyDrawingPipeline()
             .bindGroupLayouts = groupLayouts.data(),
         };
         wgpu::RenderPipelineDescriptor pipelineDesc{
-            .label = "mesh draw pipeline",
+            .label = "CSM mesh draw pipeline",
             .layout = device.CreatePipelineLayout(&layoutDesc),
             .primitive =
                 {
@@ -778,7 +828,7 @@ void Game::createMeshDepthOnlyDrawingPipeline()
         };
 
         const auto depthStencilState = wgpu::DepthStencilState{
-            .format = depthTextureFormat,
+            .format = csmShadowMapFormat,
             .depthWriteEnabled = true,
             .depthCompare = wgpu::CompareFunction::Less,
         };
@@ -1453,21 +1503,11 @@ void Game::update(float dt)
 
     cameraController.update(camera, dt);
 
-    { // per frame data
-
-        const auto viewProj = camera.getViewProj();
-        PerFrameData ud{
-            .viewProj = viewProj,
-            .invViewProj = glm::inverse(viewProj),
-            .cameraPos = glm::vec4(camera.getPosition(), 1.f),
-            .pixelSize =
-                glm::vec2(1.f / (float)params.screenWidth, 1.f / (float)params.screenHeight),
-        };
-        queue.WriteBuffer(frameDataBuffer, 0, &ud, sizeof(PerFrameData));
-    }
+    // per frame data
+    auto screenSize = glm::vec2{(float)params.screenWidth, (float)params.screenHeight};
+    writePerFrameDataBuffer(queue, frameDataBuffer, screenSize, camera);
 
     { // update cato's animation
-
         auto& e = findEntityByName("Cato");
         {
             ZoneScopedN("Skeletal animation");
@@ -1549,6 +1589,12 @@ void Game::updateCSMFrustums(const Camera& camera) const
             edge::calculateFrustumCornersWorldSpace(subFrustumCamera.getViewProj());
         const auto csmCamera = calculateCSMCamera(corners, sunLightDir, cascadedShadowMapSize);
         csmLightSpaceTMs[i] = csmCamera.getViewProj();
+
+        writePerFrameDataBuffer(
+            queue,
+            csmPerFrameDataBuffers[i],
+            glm::vec2{cascadedShadowMapSize, cascadedShadowMapSize},
+            csmCamera);
     }
 
     const auto csmData = CSMData{
@@ -1669,7 +1715,7 @@ void Game::render()
     const auto commandEncoderDesc = wgpu::CommandEncoderDescriptor{};
     const auto encoder = device.CreateCommandEncoder(&commandEncoderDesc);
 
-    { // draw CSM
+    for (std::size_t i = 0; i < NUM_SHADOW_CASCADES; ++i) { // draw CSM
         const auto depthStencilAttachment = wgpu::RenderPassDepthStencilAttachment{
             .view = csmShadowMapView,
             .depthLoadOp = wgpu::LoadOp::Clear,
@@ -1690,7 +1736,7 @@ void Game::render()
             renderPass.PushDebugGroup("Draw meshes to CSM");
 
             renderPass.SetPipeline(meshDepthOnlyPipeline);
-            renderPass.SetBindGroup(0, perFrameBindGroup);
+            renderPass.SetBindGroup(0, csmBindGroups[i]);
 
             auto prevMaterialIdx = NULL_MATERIAL_ID;
             auto prevMeshId = NULL_MESH_ID;
