@@ -185,15 +185,18 @@ fn blinnPhongBRDF(diffuse: vec3f, n: vec3f, v: vec3f, l: vec3f, h: vec3f) -> vec
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let diffuse = md.baseColor.rgb * textureSample(texture, texSampler, in.uv).rgb;
 
-    let ambient = vec3(0.05, 0.05, 0.05);
+    let ambient = vec3(0.20784314, 0.592156887, 0.56078434);
+    let ambientIntensity = 0.05;
 
-    let lightDir = -dirLight.directionAndMisc.xyz;
+    let lightDir = dirLight.directionAndMisc.xyz;
     let lightColor = dirLight.colorAndIntensity.rgb;
+    let lightIntensity = dirLight.colorAndIntensity.a;
 
     let viewPos = fd.cameraPos.xyz;
 
     let n = normalize(in.normal);
-    let l = normalize(lightDir - in.pos);
+    // let l = normalize(lightDir - in.pos);
+    let l = lightDir;
     let v = normalize(viewPos - in.pos);
     let h = normalize(v + l);
 
@@ -205,19 +208,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     var projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
 
-    let bias = clamp(0.001 * tan(acos(NoL)), 0.0, 0.1);
+    var bias = 0.002 * tan(acos(NoL));
+    bias = clamp(bias, 0.0, 0.1);
     projCoords.z = projCoords.z - bias;
 
     // from [-1;1] to [0;1], also flip Y axis
     let coord = projCoords.xy * vec2(0.5, -0.5) + vec2(0.5);
     let occlusion = textureSampleCompare(csmShadowMap, csmShadowMapSampler, coord, 0, projCoords.z);
 
-    var fragColor = fr * lightColor * NoL * occlusion;
-
-
+    var fragColor = (fr * lightColor) * (lightIntensity * NoL * occlusion);
 
     // ambient
-    fragColor += diffuse * ambient;
+    fragColor += diffuse * ambient * ambientIntensity;
 
     return vec4f(fragColor, 1.0);
 }

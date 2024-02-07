@@ -229,7 +229,7 @@ private:
     wgpu::ShaderModule fullscreenTriangleShaderModule;
 
     static const std::size_t NUM_SHADOW_CASCADES = 4;
-    float cascadedShadowMapSize{4096.f};
+    float csmTextureSize{4096.f};
 
     struct CSMData {
         glm::vec4 cascadeFarPlaneZs;
@@ -245,6 +245,5 @@ private:
     std::array<wgpu::BindGroup, 4> csmBindGroups;
     std::array<wgpu::Buffer, 4> csmPerFrameDataBuffers;
 
-    // TODO: read from scene
-    glm::vec3 sunLightDir{-0.5, -0.7, -1};
+    glm::vec3 sunLightDir;
 };

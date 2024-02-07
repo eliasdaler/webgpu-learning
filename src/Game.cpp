@@ -111,6 +111,9 @@ void Game::start(Params params)
 
 void Game::init()
 {
+    // TODO: read from scene
+    sunLightDir = {0.371477008, 0.470861048, 0.80018419};
+
     util::setCurrentDirToExeDir();
 
     util::initWebGPU();
@@ -309,6 +312,8 @@ void Game::init()
 
     { // anisotropic sampler
         const auto samplerDesc = wgpu::SamplerDescriptor{
+            .magFilter = wgpu::FilterMode::Linear,
+            .minFilter = wgpu::FilterMode::Linear,
             .compare = wgpu::CompareFunction::Less,
         };
         depthCompareSampler = device.CreateSampler(&samplerDesc);
@@ -367,8 +372,8 @@ void Game::init()
             .dimension = wgpu::TextureDimension::e2D,
             .size =
                 {
-                    .width = static_cast<std::uint32_t>(params.screenWidth),
-                    .height = static_cast<std::uint32_t>(params.screenHeight),
+                    .width = static_cast<std::uint32_t>(csmTextureSize),
+                    .height = static_cast<std::uint32_t>(csmTextureSize),
                     .depthOrArrayLayers = NUM_SHADOW_CASCADES,
                 },
             .format = csmShadowMapFormat,
@@ -503,7 +508,7 @@ void Game::initSceneData()
         directionalLightBuffer = device.CreateBuffer(&bufferDesc);
 
         const auto lightDir = sunLightDir;
-        const auto lightColor = glm::vec3{1.0, 0.75, 0.38};
+        const auto lightColor = glm::vec3{0.564248323, 0.455033153, 0.101168528};
         const auto lightIntensity = 1.0f;
 
         const auto dirLightData = DirectionalLightData{
@@ -1447,14 +1452,16 @@ void Game::createSprite(Sprite& sprite, const std::filesystem::path& texturePath
 void Game::initCamera()
 {
     static const float zNear = 0.1f;
-    static const float zFar = 1000.f;
-    static const float fovX = glm::radians(60.f);
+    static const float zFar = 800.f;
+    static const float fovX = glm::radians(45.f);
     static const float aspectRatio = (float)params.screenWidth / (float)params.screenHeight;
 
     camera.init(glm::radians(60.f), zNear, zFar, aspectRatio);
 
-    const auto startPos = glm::vec3{6.64f, 3.33f, 5.28f};
-    cameraController.setYawPitch(-2.5f, 0.2f);
+    // const auto startPos = glm::vec3{6.64f, 3.33f, 5.28f};
+    // cameraController.setYawPitch(-2.5f, 0.2f);
+    const auto startPos = glm::vec3{-48.8440704, 5.05302525, 5.56558323};
+    cameraController.setYawPitch(3.92699075, 0.523598909);
     camera.setPosition(startPos);
 }
 
@@ -1635,14 +1642,11 @@ void Game::updateCSMFrustums(const Camera& camera) const
 
         const auto corners =
             edge::calculateFrustumCornersWorldSpace(subFrustumCamera.getViewProj());
-        const auto csmCamera = calculateCSMCamera(corners, sunLightDir, cascadedShadowMapSize);
+        const auto csmCamera = calculateCSMCamera(corners, sunLightDir, csmTextureSize);
         csmLightSpaceTMs[i] = csmCamera.getViewProj();
 
         writePerFrameDataBuffer(
-            queue,
-            csmPerFrameDataBuffers[i],
-            glm::vec2{cascadedShadowMapSize, cascadedShadowMapSize},
-            csmCamera);
+            queue, csmPerFrameDataBuffers[i], glm::vec2{csmTextureSize, csmTextureSize}, csmCamera);
     }
 
     const auto csmData = CSMData{
