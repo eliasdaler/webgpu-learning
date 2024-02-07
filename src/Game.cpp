@@ -442,23 +442,13 @@ void Game::init()
                 {
                     .width = static_cast<std::uint32_t>(params.screenWidth),
                     .height = static_cast<std::uint32_t>(params.screenHeight),
-                    .depthOrArrayLayers = 1,
+                    .depthOrArrayLayers = NUM_SHADOW_CASCADES,
                 },
             .format = csmShadowMapFormat,
             .mipLevelCount = 1,
             .sampleCount = 1,
         };
         csmShadowMap = device.CreateTexture(&textureDesc);
-        // create view
-        const auto textureViewDesc = wgpu::TextureViewDescriptor{
-            .label = "CSM shadow map view",
-            .format = csmShadowMapFormat,
-            .dimension = wgpu::TextureViewDimension::e2D,
-            .baseMipLevel = 0,
-            .mipLevelCount = 1,
-            .aspect = wgpu::TextureAspect::DepthOnly,
-        };
-        csmShadowMapView = csmShadowMap.CreateView(&textureViewDesc);
     }
 
     initImGui();
@@ -544,22 +534,14 @@ void Game::initSceneData()
     for (std::size_t i = 0; i < 4; ++i) {
         allocatePerFrameDataBuffer(device, csmPerFrameDataBuffers[i]);
 
-        const std::array<wgpu::BindGroupEntry, 3> bindings{{
+        const std::array<wgpu::BindGroupEntry, 1> bindings{{
             {
                 .binding = 0,
                 .buffer = csmPerFrameDataBuffers[i],
             },
-            {
-                .binding = 1,
-                .buffer = directionalLightBuffer,
-            },
-            {
-                .binding = 2,
-                .buffer = csmDataBuffer,
-            },
         }};
         const auto bindGroupDesc = wgpu::BindGroupDescriptor{
-            .layout = perFrameDataGroupLayout.Get(),
+            .layout = depthOnlyPerFrameBindGroupLayout.Get(),
             .entryCount = bindings.size(),
             .entries = bindings.data(),
         };
@@ -793,24 +775,44 @@ void Game::createMeshDepthOnlyDrawingPipeline()
     { // create vertex shader module
         auto shaderCodeDesc = wgpu::ShaderModuleWGSLDescriptor{};
         shaderCodeDesc.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
-        shaderCodeDesc.code = meshDrawVertexShaderSource.c_str();
+        shaderCodeDesc.code = meshDrawDepthOnlyVertexShaderSource.c_str();
 
         const auto shaderDesc = wgpu::ShaderModuleDescriptor{
             .nextInChain = reinterpret_cast<wgpu::ChainedStruct*>(&shaderCodeDesc),
             .label = "mesh vertex",
         };
 
-        meshVertexShaderModule = device.CreateShaderModule(&shaderDesc);
-        meshVertexShaderModule
+        meshDepthOnlyVertexShaderModule = device.CreateShaderModule(&shaderDesc);
+        meshDepthOnlyVertexShaderModule
             .GetCompilationInfo(util::defaultShaderCompilationCallback, (void*)"mesh vertex");
+    }
+
+    { // per frame data layout
+        const std::array<wgpu::BindGroupLayoutEntry, 1> bindGroupLayoutEntries{{
+            {
+                // fd: PerFrameData
+                .binding = 0,
+                .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
+                .buffer =
+                    {
+                        .type = wgpu::BufferBindingType::Uniform,
+                    },
+            },
+        }};
+
+        const auto bindGroupLayoutDesc = wgpu::BindGroupLayoutDescriptor{
+            .label = "frame bind group (CSM)",
+            .entryCount = bindGroupLayoutEntries.size(),
+            .entries = bindGroupLayoutEntries.data(),
+        };
+        depthOnlyPerFrameBindGroupLayout = device.CreateBindGroupLayout(&bindGroupLayoutDesc);
     }
 
     {
         // reused from normal mesh pipeline
-        std::array<wgpu::BindGroupLayout, 3> groupLayouts{
-            perFrameDataGroupLayout,
-            materialGroupLayout,
-            meshGroupLayout,
+        std::array<wgpu::BindGroupLayout, 2> groupLayouts{
+            depthOnlyPerFrameBindGroupLayout,
+            meshGroupLayout, // reused from normal mesh group layout
         };
         const wgpu::PipelineLayoutDescriptor layoutDesc{
             .bindGroupLayoutCount = groupLayouts.size(),
@@ -836,7 +838,7 @@ void Game::createMeshDepthOnlyDrawingPipeline()
         pipelineDesc.depthStencil = &depthStencilState;
 
         pipelineDesc.vertex = wgpu::VertexState{
-            .module = meshVertexShaderModule,
+            .module = meshDepthOnlyVertexShaderModule,
             .entryPoint = "vs_main",
             .bufferCount = 0,
         };
@@ -1716,6 +1718,19 @@ void Game::render()
     const auto encoder = device.CreateCommandEncoder(&commandEncoderDesc);
 
     for (std::size_t i = 0; i < NUM_SHADOW_CASCADES; ++i) { // draw CSM
+        // create view
+        const auto textureViewDesc = wgpu::TextureViewDescriptor{
+            .label = "CSM shadow map view",
+            .format = csmShadowMapFormat,
+            .dimension = wgpu::TextureViewDimension::e2D,
+            .baseMipLevel = 0,
+            .mipLevelCount = 1,
+            .baseArrayLayer = (std::uint32_t)i,
+            .arrayLayerCount = 1,
+            .aspect = wgpu::TextureAspect::DepthOnly,
+        };
+        csmShadowMapView = csmShadowMap.CreateView(&textureViewDesc);
+
         const auto depthStencilAttachment = wgpu::RenderPassDepthStencilAttachment{
             .view = csmShadowMapView,
             .depthLoadOp = wgpu::LoadOp::Clear,
@@ -1744,13 +1759,7 @@ void Game::render()
             for (const auto& dcIdx : sortedDrawCommands) {
                 const auto& dc = drawCommands[dcIdx];
 
-                if (dc.mesh.materialId != prevMaterialIdx) {
-                    prevMaterialIdx = dc.mesh.materialId;
-                    const auto& material = materialCache.getMaterial(dc.mesh.materialId);
-                    renderPass.SetBindGroup(1, material.bindGroup);
-                }
-
-                renderPass.SetBindGroup(2, dc.meshBindGroup);
+                renderPass.SetBindGroup(1, dc.meshBindGroup);
 
                 if (dc.meshId != prevMeshId) {
                     prevMeshId = dc.meshId;

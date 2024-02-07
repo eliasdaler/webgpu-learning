@@ -236,6 +236,8 @@ private:
     };
     wgpu::Buffer csmDataBuffer;
 
+    wgpu::ShaderModule meshDepthOnlyVertexShaderModule;
+    wgpu::BindGroupLayout depthOnlyPerFrameBindGroupLayout;
     wgpu::Texture csmShadowMap;
     wgpu::TextureView csmShadowMapView;
     wgpu::TextureFormat csmShadowMapFormat;
