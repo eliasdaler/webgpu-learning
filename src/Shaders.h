@@ -181,6 +181,35 @@ fn blinnPhongBRDF(diffuse: vec3f, n: vec3f, v: vec3f, l: vec3f, h: vec3f) -> vec
     return Fd + Fr;
 }
 
+fn chooseCascade(fragPos: vec3f) -> i32 {
+    let cameraPos = fd.cameraPos;
+    let d = distance(cameraPos.xz, fragPos.xz);
+    for (var i = 0; i < 3; i += 1) {
+        if (d < csmData.cascadeFarPlaneZs[i]) {
+            return i;
+        }
+    }
+    return 3;
+}
+
+fn debugShadowsFactor(cascadeIndex: i32) -> vec3f {
+    switch cascadeIndex {
+        case 0: {
+            return vec3(1.0f, 0.25f, 0.25f);
+        }
+        case 1: {
+            return vec3(0.25f, 1.0f, 0.25f);
+        }
+        case 2: {
+            return vec3(0.25f, 0.25f, 1.0f);
+        }
+        default: {
+            return vec3(1.0f, 1.0f, 1.0f);
+        }
+    }
+    return vec3(1.0f, 1.0f, 1.0f);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let diffuse = md.baseColor.rgb * textureSample(texture, texSampler, in.uv).rgb;
@@ -204,22 +233,27 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     let NoL = saturate(dot(n, l));
 
-    let fragPosLightSpace = csmData.lightSpaceTMs[0] * vec4(in.pos, 1.0);
+    let cascadeIndex = chooseCascade(in.pos);
+    let fragPosLightSpace = csmData.lightSpaceTMs[cascadeIndex] * vec4(in.pos, 1.0);
 
     var projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
 
-    var bias = 0.002 * tan(acos(NoL));
+    var bias = 0.001 * tan(acos(NoL));
     bias = clamp(bias, 0.0, 0.1);
     projCoords.z = projCoords.z - bias;
 
     // from [-1;1] to [0;1], also flip Y axis
     let coord = projCoords.xy * vec2(0.5, -0.5) + vec2(0.5);
-    let occlusion = textureSampleCompare(csmShadowMap, csmShadowMapSampler, coord, 0, projCoords.z);
+    let occlusion = textureSampleCompare(
+            csmShadowMap, csmShadowMapSampler,
+            coord, cascadeIndex, projCoords.z);
 
     var fragColor = (fr * lightColor) * (lightIntensity * NoL * occlusion);
 
     // ambient
     fragColor += diffuse * ambient * ambientIntensity;
+
+    // fragColor *= debugShadowsFactor(cascadeIndex);
 
     return vec4f(fragColor, 1.0);
 }

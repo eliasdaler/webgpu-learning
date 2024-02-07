@@ -1627,7 +1627,7 @@ void Game::updateCSMFrustums(const Camera& camera) const
 
     std::array<float, NUM_SHADOW_CASCADES> percents{0.1f, 0.3f, 0.8f, 1.f};
     if (camera.getZFar() > 100.f) {
-        percents = {0.01f, 0.1f, 0.3f, 1.f};
+        percents = {0.015f, 0.03f, 0.2f, 0.5f};
     }
 
     std::array<float, NUM_SHADOW_CASCADES> cascadeFarPlaneZs{};
