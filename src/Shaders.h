@@ -56,12 +56,12 @@ const std::string meshDrawDepthOnlyVertexShaderSource = std::string(meshShadersC
 @group(1) @binding(6) var<storage, read> jointIds: array<vec4u>;
 @group(1) @binding(7) var<storage, read> weights: array<vec4f>;
 
-fn calculateWorldPos(vertexIndex: u32, pos: vec4f) -> vec4f {
+fn calculatePos(vertexIndex: u32, pos: vec4f) -> vec4f {
     // FIXME: pass whether or not mesh has skeleton via other means,
     // otherwise this won't work for meshes with four joints.
     let hasSkeleton = (arrayLength(&jointIds) != 4);
     if (!hasSkeleton) {
-        return meshData.model * pos;
+        return pos;
     }
 
     let jointIds = jointIds[vertexIndex];
@@ -71,7 +71,7 @@ fn calculateWorldPos(vertexIndex: u32, pos: vec4f) -> vec4f {
         weights.y * jointMatrices[jointIds.y] +
         weights.z * jointMatrices[jointIds.z] +
         weights.w * jointMatrices[jointIds.w];
-    return meshData.model * skinMatrix * pos;
+    return skinMatrix * pos;
 }
 
 @vertex
@@ -81,7 +81,8 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     // let tangent = tangents[vertexIndex]; // unused for now
     let uv = uvs[vertexIndex];
 
-    let worldPos = calculateWorldPos(vertexIndex, pos);
+    let posL = calculatePos(vertexIndex, pos);
+    let worldPos = meshData.model * posL;
 
     var out: VertexOutput;
     out.position = fd.viewProj * worldPos;
@@ -98,6 +99,9 @@ const std::string meshDrawVertexShaderSource = std::string(meshShadersCommonDefs
 @group(0) @binding(1) var<uniform> dirLight: DirectionalLight;
 @group(0) @binding(2) var<uniform> csmData: CSMData;
 
+@group(0) @binding(3) var csmShadowMap: texture_depth_2d_array;
+@group(0) @binding(4) var csmShadowMapSampler: sampler_comparison;
+
 @group(2) @binding(0) var<uniform> meshData: MeshData;
 @group(2) @binding(1) var<storage, read> jointMatrices: array<mat4x4f>;
 
@@ -110,12 +114,12 @@ const std::string meshDrawVertexShaderSource = std::string(meshShadersCommonDefs
 @group(2) @binding(6) var<storage, read> jointIds: array<vec4u>;
 @group(2) @binding(7) var<storage, read> weights: array<vec4f>;
 
-fn calculateWorldPos(vertexIndex: u32, pos: vec4f) -> vec4f {
+fn calculatePos(vertexIndex: u32, pos: vec4f) -> vec4f {
     // FIXME: pass whether or not mesh has skeleton via other means,
     // otherwise this won't work for meshes with four joints.
     let hasSkeleton = (arrayLength(&jointIds) != 4);
     if (!hasSkeleton) {
-        return meshData.model * pos;
+        return pos;
     }
 
     let jointIds = jointIds[vertexIndex];
@@ -125,7 +129,7 @@ fn calculateWorldPos(vertexIndex: u32, pos: vec4f) -> vec4f {
         weights.y * jointMatrices[jointIds.y] +
         weights.z * jointMatrices[jointIds.z] +
         weights.w * jointMatrices[jointIds.w];
-    return meshData.model * skinMatrix * pos;
+    return skinMatrix * pos;
 }
 
 @vertex
@@ -135,7 +139,8 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     // let tangent = tangents[vertexIndex]; // unused for now
     let uv = uvs[vertexIndex];
 
-    let worldPos = calculateWorldPos(vertexIndex, pos);
+    let posL = calculatePos(vertexIndex, pos);
+    let worldPos = meshData.model * posL;
 
     var out: VertexOutput;
     out.position = fd.viewProj * worldPos;
@@ -151,6 +156,9 @@ const std::string meshDrawFragmentShaderSource = std::string(meshShadersCommonDe
 @group(0) @binding(0) var<uniform> fd: PerFrameData;
 @group(0) @binding(1) var<uniform> dirLight: DirectionalLight;
 @group(0) @binding(2) var<uniform> csmData: CSMData;
+
+@group(0) @binding(3) var csmShadowMap: texture_depth_2d_array;
+@group(0) @binding(4) var csmShadowMapSampler: sampler_comparison;
 
 @group(1) @binding(0) var<uniform> md: MaterialData;
 @group(1) @binding(1) var texture: texture_2d<f32>;
@@ -192,7 +200,21 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let fr = blinnPhongBRDF(diffuse, n, v, l, h);
 
     let NoL = saturate(dot(n, l));
-    var fragColor = fr * lightColor * NoL;
+
+    let fragPosLightSpace = csmData.lightSpaceTMs[0] * vec4(in.pos, 1.0);
+
+    var projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+
+    let bias = clamp(0.001 * tan(acos(NoL)), 0.0, 0.1);
+    projCoords.z = projCoords.z - bias;
+
+    // from [-1;1] to [0;1], also flip Y axis
+    let coord = projCoords.xy * vec2(0.5, -0.5) + vec2(0.5);
+    let occlusion = textureSampleCompare(csmShadowMap, csmShadowMapSampler, coord, 0, projCoords.z);
+
+    var fragColor = fr * lightColor * NoL * occlusion;
+
+
 
     // ambient
     fragColor += diffuse * ambient;

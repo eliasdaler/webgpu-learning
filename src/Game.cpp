@@ -307,6 +307,13 @@ void Game::init()
         anisotropicSampler = device.CreateSampler(&samplerDesc);
     }
 
+    { // anisotropic sampler
+        const auto samplerDesc = wgpu::SamplerDescriptor{
+            .compare = wgpu::CompareFunction::Less,
+        };
+        depthCompareSampler = device.CreateSampler(&samplerDesc);
+    }
+
     {
         const auto bufferDesc = wgpu::BufferDescriptor{
             .label = "empty storage buffer",
@@ -352,6 +359,24 @@ void Game::init()
     createSkyboxDrawingPipeline();
     createSpriteDrawingPipeline();
     createPostFXDrawingPipeline();
+
+    { // create CSM depth texture
+        const auto textureDesc = wgpu::TextureDescriptor{
+            .label = "CSM shadow map",
+            .usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding,
+            .dimension = wgpu::TextureDimension::e2D,
+            .size =
+                {
+                    .width = static_cast<std::uint32_t>(params.screenWidth),
+                    .height = static_cast<std::uint32_t>(params.screenHeight),
+                    .depthOrArrayLayers = NUM_SHADOW_CASCADES,
+                },
+            .format = csmShadowMapFormat,
+            .mipLevelCount = 1,
+            .sampleCount = 1,
+        };
+        csmShadowMap = device.CreateTexture(&textureDesc);
+    }
 
     initSceneData();
 
@@ -433,24 +458,6 @@ void Game::init()
         skyboxBindGroup = device.CreateBindGroup(&bindGroupDesc);
     }
 
-    { // create CSM depth texture
-        const auto textureDesc = wgpu::TextureDescriptor{
-            .label = "CSM shadow map",
-            .usage = wgpu::TextureUsage::RenderAttachment,
-            .dimension = wgpu::TextureDimension::e2D,
-            .size =
-                {
-                    .width = static_cast<std::uint32_t>(params.screenWidth),
-                    .height = static_cast<std::uint32_t>(params.screenHeight),
-                    .depthOrArrayLayers = NUM_SHADOW_CASCADES,
-                },
-            .format = csmShadowMapFormat,
-            .mipLevelCount = 1,
-            .sampleCount = 1,
-        };
-        csmShadowMap = device.CreateTexture(&textureDesc);
-    }
-
     initImGui();
 }
 
@@ -506,8 +513,20 @@ void Game::initSceneData()
         queue.WriteBuffer(directionalLightBuffer, 0, &dirLightData, sizeof(DirectionalLightData));
     }
 
+    const auto textureViewDesc = wgpu::TextureViewDescriptor{
+        .label = "CSM shadow map view",
+        .format = csmShadowMapFormat,
+        .dimension = wgpu::TextureViewDimension::e2DArray,
+        .baseMipLevel = 0,
+        .mipLevelCount = 1,
+        .baseArrayLayer = 0,
+        .arrayLayerCount = 4,
+        .aspect = wgpu::TextureAspect::DepthOnly,
+    };
+    auto csmShadowMapView = csmShadowMap.CreateView(&textureViewDesc);
+
     { // per frame data
-        const std::array<wgpu::BindGroupEntry, 3> bindings{{
+        const std::array<wgpu::BindGroupEntry, 5> bindings{{
             {
                 .binding = 0,
                 .buffer = frameDataBuffer,
@@ -519,6 +538,14 @@ void Game::initSceneData()
             {
                 .binding = 2,
                 .buffer = csmDataBuffer,
+            },
+            {
+                .binding = 3,
+                .textureView = csmShadowMapView,
+            },
+            {
+                .binding = 4,
+                .sampler = depthCompareSampler,
             },
         }};
         const auto bindGroupDesc = wgpu::BindGroupDescriptor{
@@ -583,7 +610,7 @@ void Game::createMeshDrawingPipeline()
     }
 
     { // per frame data layout
-        const std::array<wgpu::BindGroupLayoutEntry, 3> bindGroupLayoutEntries{{
+        const std::array<wgpu::BindGroupLayoutEntry, 5> bindGroupLayoutEntries{{
             {
                 // fd: PerFrameData
                 .binding = 0,
@@ -609,6 +636,25 @@ void Game::createMeshDrawingPipeline()
                 .buffer =
                     {
                         .type = wgpu::BufferBindingType::Uniform,
+                    },
+            },
+            {
+                // csmShadowMap
+                .binding = 3,
+                .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
+                .texture =
+                    {
+                        .sampleType = wgpu::TextureSampleType::Depth,
+                        .viewDimension = wgpu::TextureViewDimension::e2DArray,
+                    },
+            },
+            {
+                // csmShadowMapSampler
+                .binding = 4,
+                .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
+                .sampler =
+                    {
+                        .type = wgpu::SamplerBindingType::Comparison,
                     },
             },
         }};

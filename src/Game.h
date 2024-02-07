@@ -141,6 +141,7 @@ private:
     wgpu::Sampler nearestSampler;
     wgpu::Sampler bilinearSampler;
     wgpu::Sampler anisotropicSampler;
+    wgpu::Sampler depthCompareSampler;
 
     wgpu::BindGroup perFrameBindGroup;
 
