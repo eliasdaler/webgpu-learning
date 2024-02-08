@@ -173,7 +173,7 @@ void Game::init()
 
     // change to false if something is broken
     // but otherwise, it improves debug performance 2x
-    static const bool unsafeMode = false;
+    static const bool unsafeMode = true;
     if (unsafeMode) {
         enabledToggles.push_back("skip_validation");
     }
@@ -525,7 +525,7 @@ void Game::initSceneData()
         .baseMipLevel = 0,
         .mipLevelCount = 1,
         .baseArrayLayer = 0,
-        .arrayLayerCount = 4,
+        .arrayLayerCount = NUM_SHADOW_CASCADES,
         .aspect = wgpu::TextureAspect::DepthOnly,
     };
     auto csmShadowMapView = csmShadowMap.CreateView(&textureViewDesc);
@@ -563,7 +563,7 @@ void Game::initSceneData()
     }
 
     // CSM per frame data buffers
-    for (std::size_t i = 0; i < 4; ++i) {
+    for (std::size_t i = 0; i < NUM_SHADOW_CASCADES; ++i) {
         allocatePerFrameDataBuffer(device, csmPerFrameDataBuffers[i]);
 
         const std::array<wgpu::BindGroupEntry, 1> bindings{{
@@ -869,11 +869,18 @@ void Game::createMeshDepthOnlyDrawingPipeline()
             .bindGroupLayoutCount = groupLayouts.size(),
             .bindGroupLayouts = groupLayouts.data(),
         };
+
+        // depth clamp
+        wgpu::PrimitiveDepthClipControl dc;
+        dc.sType = wgpu::SType::PrimitiveDepthClipControl;
+        dc.unclippedDepth = true;
+
         wgpu::RenderPipelineDescriptor pipelineDesc{
             .label = "CSM mesh draw pipeline",
             .layout = device.CreatePipelineLayout(&layoutDesc),
             .primitive =
                 {
+                    .nextInChain = &dc,
                     .topology = wgpu::PrimitiveTopology::TriangleList,
                     .frontFace = wgpu::FrontFace::CCW,
                     .cullMode = wgpu::CullMode::Back,
@@ -1617,7 +1624,7 @@ void Game::updateEntityTransforms(Entity& e, const glm::mat4& parentWorldTransfo
     }
 }
 
-void Game::updateCSMFrustums(const Camera& camera) const
+void Game::updateCSMFrustums(const Camera& camera)
 {
     // create subfustrum by copying everything about the main camera,
     // but changing zFar
@@ -1625,9 +1632,9 @@ void Game::updateCSMFrustums(const Camera& camera) const
     subFrustumCamera.setPosition(camera.getPosition());
     subFrustumCamera.setHeading(camera.getHeading());
 
-    std::array<float, NUM_SHADOW_CASCADES> percents{0.1f, 0.3f, 0.8f, 1.f};
+    std::array<float, NUM_SHADOW_CASCADES> percents{0.1f, 0.3f, 0.8f};
     if (camera.getZFar() > 100.f) {
-        percents = {0.015f, 0.03f, 0.2f, 0.5f};
+        percents = {0.015f, 0.03f, 0.2f};
     }
 
     std::array<float, NUM_SHADOW_CASCADES> cascadeFarPlaneZs{};
@@ -1642,11 +1649,14 @@ void Game::updateCSMFrustums(const Camera& camera) const
 
         const auto corners =
             edge::calculateFrustumCornersWorldSpace(subFrustumCamera.getViewProj());
-        const auto csmCamera = calculateCSMCamera(corners, sunLightDir, csmTextureSize);
-        csmLightSpaceTMs[i] = csmCamera.getViewProj();
+        csmCameras[i] = calculateCSMCamera(corners, sunLightDir, csmTextureSize);
+        csmLightSpaceTMs[i] = csmCameras[i].getViewProj();
 
         writePerFrameDataBuffer(
-            queue, csmPerFrameDataBuffers[i], glm::vec2{csmTextureSize, csmTextureSize}, csmCamera);
+            queue,
+            csmPerFrameDataBuffers[i],
+            glm::vec2{csmTextureSize, csmTextureSize},
+            csmCameras[i]);
     }
 
     const auto csmData = CSMData{
@@ -1806,8 +1816,16 @@ void Game::render()
             auto prevMaterialIdx = NULL_MATERIAL_ID;
             auto prevMeshId = NULL_MESH_ID;
 
+            const auto frustum = edge::createFrustumFromCamera(csmCameras[i]);
+
             for (const auto& dcIdx : sortedDrawCommands) {
                 const auto& dc = drawCommands[dcIdx];
+
+                // hack: don't cull big objects, because shadows from them might disappear
+                if (dc.worldBoundingSphere.radius < 2.f &&
+                    !edge::isInFrustum(frustum, dc.worldBoundingSphere)) {
+                    continue;
+                }
 
                 renderPass.SetBindGroup(1, dc.meshBindGroup);
 
@@ -1888,8 +1906,13 @@ void Game::render()
             auto prevMaterialIdx = NULL_MATERIAL_ID;
             auto prevMeshId = NULL_MESH_ID;
 
+            const auto frustum = edge::createFrustumFromCamera(camera);
+
             for (const auto& dcIdx : sortedDrawCommands) {
                 const auto& dc = drawCommands[dcIdx];
+                if (!edge::isInFrustum(frustum, dc.worldBoundingSphere)) {
+                    continue;
+                }
 
                 if (dc.mesh.materialId != prevMaterialIdx) {
                     prevMaterialIdx = dc.mesh.materialId;
@@ -2013,15 +2036,21 @@ void Game::generateDrawList()
 
     for (const auto& ePtr : entities) {
         const auto& e = *ePtr;
+        const auto transformMat = e.transform.asMatrix();
 
         for (std::size_t meshIdx = 0; meshIdx < e.meshes.size(); ++meshIdx) {
             const auto& mesh = meshCache.getMesh(e.meshes[meshIdx]);
             // TODO: draw frustum culling here
             const auto& material = materialCache.getMaterial(mesh.materialId);
+
+            const auto worldBoundingSphere = edge::
+                calculateBoundingSphereWorld(transformMat, mesh.boundingSphere, e.hasSkeleton);
+
             drawCommands.push_back(DrawCommand{
                 .mesh = mesh,
                 .meshBindGroup = e.meshBindGroups[meshIdx],
                 .meshId = e.meshes[meshIdx],
+                .worldBoundingSphere = worldBoundingSphere,
             });
         }
     }

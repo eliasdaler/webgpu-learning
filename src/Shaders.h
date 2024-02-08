@@ -20,9 +20,11 @@ struct DirectionalLight {
     colorAndIntensity: vec4f,
 };
 
+const NUM_SHADOW_CASCADES = 4;
+
 struct CSMData {
     cascadeFarPlaneZs: vec4f,
-    lightSpaceTMs: array<mat4x4f, 4>,
+    lightSpaceTMs: array<mat4x4f, NUM_SHADOW_CASCADES>,
 };
 
 struct MeshData {
@@ -184,7 +186,7 @@ fn blinnPhongBRDF(diffuse: vec3f, n: vec3f, v: vec3f, l: vec3f, h: vec3f) -> vec
 fn chooseCascade(fragPos: vec3f) -> i32 {
     let cameraPos = fd.cameraPos;
     let d = distance(cameraPos.xz, fragPos.xz);
-    for (var i = 0; i < 3; i += 1) {
+    for (var i = 0; i < NUM_SHADOW_CASCADES - 1; i += 1) {
         if (d < csmData.cascadeFarPlaneZs[i]) {
             return i;
         }

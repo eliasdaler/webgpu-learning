@@ -86,6 +86,7 @@ public:
         const GPUMesh& mesh;
         wgpu::BindGroup meshBindGroup;
         std::size_t meshId;
+        math::Sphere worldBoundingSphere;
     };
 
 public:
@@ -116,7 +117,7 @@ private:
     void updateEntityTransforms();
     void updateEntityTransforms(Entity& e, const glm::mat4& parentWorldTransform);
 
-    void updateCSMFrustums(const Camera& camera) const;
+    void updateCSMFrustums(const Camera& camera);
 
     void generateDrawList();
     void sortDrawList();
@@ -233,7 +234,7 @@ private:
 
     struct CSMData {
         glm::vec4 cascadeFarPlaneZs;
-        std::array<glm::mat4, 4> lightSpaceTMs;
+        std::array<glm::mat4, NUM_SHADOW_CASCADES> lightSpaceTMs;
     };
     wgpu::Buffer csmDataBuffer;
 
@@ -242,8 +243,9 @@ private:
     wgpu::Texture csmShadowMap;
     wgpu::TextureView csmShadowMapView;
     wgpu::TextureFormat csmShadowMapFormat;
-    std::array<wgpu::BindGroup, 4> csmBindGroups;
-    std::array<wgpu::Buffer, 4> csmPerFrameDataBuffers;
+    std::array<wgpu::BindGroup, NUM_SHADOW_CASCADES> csmBindGroups;
+    std::array<wgpu::Buffer, NUM_SHADOW_CASCADES> csmPerFrameDataBuffers;
+    std::array<Camera, NUM_SHADOW_CASCADES> csmCameras;
 
     glm::vec3 sunLightDir;
 };
