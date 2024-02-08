@@ -8,6 +8,7 @@
 #include <Graphics/MipMapGenerator.h>
 #include <Graphics/Scene.h>
 #include <Graphics/Skeleton.h>
+#include <Math/Util.h>
 
 #include <util/WebGPUUtil.h>
 
@@ -164,6 +165,14 @@ void loadPrimitive(
     mesh.positions.resize(positions.size());
     for (std::size_t i = 0; i < positions.size(); ++i) {
         mesh.positions[i] = glm::vec4(positions[i], 1.f);
+    }
+
+    { // get min and max pos
+        const auto posAccessorIndex = findAttributeAccessor(primitive, GLTF_POSITIONS_ACCESSOR);
+        assert(posAccessorIndex != -1 && "Accessor not found");
+        const auto& posAccessor = model.accessors[posAccessorIndex];
+        mesh.minPos = tg2glm(posAccessor.minValues);
+        mesh.maxPos = tg2glm(posAccessor.maxValues);
     }
 
     auto numVertices = positions.size();
@@ -664,6 +673,9 @@ void SceneLoader::loadScene(const LoadContext& ctx, Scene& scene, const std::fil
             if (gltfPrimitive.material != -1) {
                 gpuMesh.materialId = materialMapping.at(gltfPrimitive.material);
             }
+            gpuMesh.minPos = cpuMesh.minPos;
+            gpuMesh.maxPos = cpuMesh.maxPos;
+            gpuMesh.boundingSphere = util::calculateBoundingSphere(cpuMesh.positions);
             loadGPUMesh(ctx, cpuMesh, gpuMesh);
 
             const auto meshId = ctx.meshCache.addMesh(std::move(gpuMesh));

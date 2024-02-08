@@ -1,5 +1,6 @@
 add_executable(game
   Math/Transform.cpp
+  Math/Util.cpp
 
   Graphics/Camera.cpp
   Graphics/FrustumCulling.cpp

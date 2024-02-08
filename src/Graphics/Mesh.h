@@ -25,4 +25,7 @@ struct Mesh {
     bool hasSkeleton{false};
 
     std::string name;
+
+    glm::vec3 minPos;
+    glm::vec3 maxPos;
 };

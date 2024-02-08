@@ -2,9 +2,12 @@
 
 #include <limits>
 
+#include <glm/vec3.hpp>
+
 #include <webgpu/webgpu_cpp.h>
 
 #include <Graphics/Material.h>
+#include <Math/Sphere.h>
 
 using MeshId = std::size_t;
 static const auto NULL_MESH_ID = std::numeric_limits<std::size_t>::max();
@@ -21,6 +24,11 @@ struct GPUMesh {
         std::uint64_t size;
     };
     std::vector<AttribProps> attribs;
+
+    // AABB
+    glm::vec3 minPos;
+    glm::vec3 maxPos;
+    math::Sphere boundingSphere;
 
     bool hasSkeleton{false};
 };
