@@ -128,6 +128,11 @@ void Game::init()
     const auto adapterOpts = wgpu::RequestAdapterOptions{};
     adapter = util::requestAdapter(instance, &adapterOpts);
 
+    if (!adapter.HasFeature(wgpu::FeatureName::DepthClipControl)) {
+        printf("Error: Adapter doesn't have depth-clip-control\n");
+        std::exit(1);
+    }
+
     auto supportedLimits = wgpu::SupportedLimits{};
     { // report supported limits
         adapter.GetLimits(&supportedLimits);
