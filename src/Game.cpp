@@ -362,31 +362,13 @@ void Game::init()
     }
 
     createMeshDrawingPipeline();
-
-    csmShadowMapFormat = wgpu::TextureFormat::Depth32Float;
     createMeshDepthOnlyDrawingPipeline();
+
+    initCSMData(csm, device, depthOnlyPerFrameBindGroupLayout);
 
     createSkyboxDrawingPipeline();
     createSpriteDrawingPipeline();
     createPostFXDrawingPipeline();
-
-    { // create CSM depth texture
-        const auto textureDesc = wgpu::TextureDescriptor{
-            .label = "CSM shadow map",
-            .usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding,
-            .dimension = wgpu::TextureDimension::e2D,
-            .size =
-                {
-                    .width = static_cast<std::uint32_t>(csmTextureSize),
-                    .height = static_cast<std::uint32_t>(csmTextureSize),
-                    .depthOrArrayLayers = NUM_SHADOW_CASCADES,
-                },
-            .format = csmShadowMapFormat,
-            .mipLevelCount = 1,
-            .sampleCount = 1,
-        };
-        csmShadowMap = device.CreateTexture(&textureDesc);
-    }
 
     initSceneData();
 
@@ -493,16 +475,6 @@ void Game::initSceneData()
     // per frame data buffer
     allocatePerFrameDataBuffer(device, frameDataBuffer);
 
-    { // CSM data
-        const auto bufferDesc = wgpu::BufferDescriptor{
-            .label = "CSM data buffer",
-            .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
-            .size = sizeof(CSMData),
-        };
-
-        csmDataBuffer = device.CreateBuffer(&bufferDesc);
-    }
-
     { // dir light buffer
         const auto bufferDesc = wgpu::BufferDescriptor{
             .label = "directional light data buffer",
@@ -525,15 +497,15 @@ void Game::initSceneData()
 
     const auto textureViewDesc = wgpu::TextureViewDescriptor{
         .label = "CSM shadow map view",
-        .format = csmShadowMapFormat,
+        .format = csm.shadowMapFormat,
         .dimension = wgpu::TextureViewDimension::e2DArray,
         .baseMipLevel = 0,
         .mipLevelCount = 1,
         .baseArrayLayer = 0,
-        .arrayLayerCount = NUM_SHADOW_CASCADES,
+        .arrayLayerCount = CSMData::NUM_SHADOW_CASCADES,
         .aspect = wgpu::TextureAspect::DepthOnly,
     };
-    auto csmShadowMapView = csmShadowMap.CreateView(&textureViewDesc);
+    auto csmShadowMapView = csm.shadowMap.CreateView(&textureViewDesc);
 
     { // per frame data
         const std::array<wgpu::BindGroupEntry, 5> bindings{{
@@ -547,7 +519,7 @@ void Game::initSceneData()
             },
             {
                 .binding = 2,
-                .buffer = csmDataBuffer,
+                .buffer = csm.dataBuffer,
             },
             {
                 .binding = 3,
@@ -565,25 +537,6 @@ void Game::initSceneData()
         };
 
         perFrameBindGroup = device.CreateBindGroup(&bindGroupDesc);
-    }
-
-    // CSM per frame data buffers
-    for (std::size_t i = 0; i < NUM_SHADOW_CASCADES; ++i) {
-        allocatePerFrameDataBuffer(device, csmPerFrameDataBuffers[i]);
-
-        const std::array<wgpu::BindGroupEntry, 1> bindings{{
-            {
-                .binding = 0,
-                .buffer = csmPerFrameDataBuffers[i],
-            },
-        }};
-        const auto bindGroupDesc = wgpu::BindGroupDescriptor{
-            .layout = depthOnlyPerFrameBindGroupLayout.Get(),
-            .entryCount = bindings.size(),
-            .entries = bindings.data(),
-        };
-
-        csmBindGroups[i] = device.CreateBindGroup(&bindGroupDesc);
     }
 }
 
@@ -893,7 +846,7 @@ void Game::createMeshDepthOnlyDrawingPipeline()
         };
 
         const auto depthStencilState = wgpu::DepthStencilState{
-            .format = csmShadowMapFormat,
+            .format = csm.shadowMapFormat,
             .depthWriteEnabled = true,
             .depthCompare = wgpu::CompareFunction::Less,
         };
@@ -1586,7 +1539,7 @@ void Game::update(float dt)
     }
 
     updateEntityTransforms();
-    updateCSMFrustums(camera);
+    updateCSMFrustums(csm, queue, camera, sunLightDir);
 
     updateDevTools(dt);
 }
@@ -1629,59 +1582,6 @@ void Game::updateEntityTransforms(Entity& e, const glm::mat4& parentWorldTransfo
         auto& child = *entities[childId];
         updateEntityTransforms(child, e.worldTransform);
     }
-}
-
-void Game::updateCSMFrustums(const Camera& camera)
-{
-    // create subfustrum by copying everything about the main camera,
-    // but changing zFar
-    Camera subFrustumCamera;
-    subFrustumCamera.setPosition(camera.getPosition());
-    subFrustumCamera.setHeading(camera.getHeading());
-
-    std::array<float, NUM_SHADOW_CASCADES> percents = {0.3f, 0.8f, 1.f};
-    if (camera.getZFar() > 100.f) {
-        percents = {0.01f, 0.3f, 1.f};
-    }
-
-    /* std::array<float, NUM_SHADOW_CASCADES> percents{0.05f, 0.1f, 0.3f, 0.8f};
-    if (camera.getZFar() > 100.f) {
-        percents = {0.01f, 0.02f, 0.03f, 0.2f};
-    } */
-
-    std::array<float, NUM_SHADOW_CASCADES> cascadeFarPlaneZs{};
-    std::array<glm::mat4, NUM_SHADOW_CASCADES> csmLightSpaceTMs{};
-
-    for (std::size_t i = 0; i < NUM_SHADOW_CASCADES; ++i) {
-        float zNear = i == 0 ? camera.getZNear() : camera.getZNear() * percents[i - 1];
-        float zFar = camera.getZFar() * percents[i];
-        cascadeFarPlaneZs[i] = zFar;
-
-        subFrustumCamera.init(camera.getFOVX(), zNear, zFar, 1.f);
-
-        const auto corners =
-            edge::calculateFrustumCornersWorldSpace(subFrustumCamera.getViewProj());
-        csmCameras[i] = calculateCSMCamera(corners, sunLightDir, csmTextureSize);
-        csmLightSpaceTMs[i] = csmCameras[i].getViewProj();
-
-        writePerFrameDataBuffer(
-            queue,
-            csmPerFrameDataBuffers[i],
-            glm::vec2{csmTextureSize, csmTextureSize},
-            csmCameras[i]);
-    }
-
-    const auto csmData = CSMData{
-        .cascadeFarPlaneZs =
-            {
-                cascadeFarPlaneZs[0],
-                cascadeFarPlaneZs[1],
-                cascadeFarPlaneZs[2],
-                cascadeFarPlaneZs[3],
-            },
-        .lightSpaceTMs = csmLightSpaceTMs,
-    };
-    queue.WriteBuffer(csmDataBuffer, 0, &csmData, sizeof(CSMData));
 }
 
 namespace
@@ -1790,19 +1690,17 @@ void Game::render()
     const auto commandEncoderDesc = wgpu::CommandEncoderDescriptor{};
     const auto encoder = device.CreateCommandEncoder(&commandEncoderDesc);
 
-    for (std::size_t i = 0; i < NUM_SHADOW_CASCADES; ++i) { // draw CSM
+    for (std::size_t i = 0; i < CSMData::NUM_SHADOW_CASCADES; ++i) { // draw CSM
         // create view
         const auto textureViewDesc = wgpu::TextureViewDescriptor{
             .label = "CSM shadow map view",
-            .format = csmShadowMapFormat,
+            .format = csm.shadowMapFormat,
             .dimension = wgpu::TextureViewDimension::e2D,
-            .baseMipLevel = 0,
-            .mipLevelCount = 1,
             .baseArrayLayer = (std::uint32_t)i,
             .arrayLayerCount = 1,
             .aspect = wgpu::TextureAspect::DepthOnly,
         };
-        csmShadowMapView = csmShadowMap.CreateView(&textureViewDesc);
+        auto csmShadowMapView = csm.shadowMap.CreateView(&textureViewDesc);
 
         const auto depthStencilAttachment = wgpu::RenderPassDepthStencilAttachment{
             .view = csmShadowMapView,
@@ -1826,12 +1724,12 @@ void Game::render()
                 renderPass.PushDebugGroup("Draw meshes to CSM");
 
                 renderPass.SetPipeline(meshDepthOnlyPipeline);
-                renderPass.SetBindGroup(0, csmBindGroups[i]);
+                renderPass.SetBindGroup(0, csm.bindGroups[i]);
 
                 auto prevMaterialIdx = NULL_MATERIAL_ID;
                 auto prevMeshId = NULL_MESH_ID;
 
-                const auto frustum = edge::createFrustumFromCamera(csmCameras[i]);
+                const auto frustum = edge::createFrustumFromCamera(csm.cascadeCameras[i]);
 
                 for (const auto& dcIdx : sortedDrawCommands) {
                     const auto& dc = drawCommands[dcIdx];

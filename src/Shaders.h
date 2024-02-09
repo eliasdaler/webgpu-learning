@@ -44,7 +44,11 @@ struct VertexOutput {
 )";
 
 const std::string meshDrawDepthOnlyVertexShaderSource = std::string(meshShadersCommonDefs) + R"(
-@group(0) @binding(0) var<uniform> fd: PerFrameData;
+struct PerFrameDataDepthOnly {
+    viewProj: mat4x4f,
+};
+
+@group(0) @binding(0) var<uniform> fd: PerFrameDataDepthOnly;
 
 @group(1) @binding(0) var<uniform> meshData: MeshData;
 @group(1) @binding(1) var<storage, read> jointMatrices: array<mat4x4f>;

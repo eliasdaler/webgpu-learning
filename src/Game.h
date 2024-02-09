@@ -13,6 +13,7 @@
 #include <Graphics/Scene.h>
 #include <Graphics/SkeletonAnimator.h>
 
+#include "CSM.h"
 #include "FreeCameraController.h"
 #include "MaterialCache.h"
 #include "MeshCache.h"
@@ -116,8 +117,6 @@ private:
 
     void updateEntityTransforms();
     void updateEntityTransforms(Entity& e, const glm::mat4& parentWorldTransform);
-
-    void updateCSMFrustums(const Camera& camera);
 
     void generateDrawList();
     void sortDrawList();
@@ -229,24 +228,11 @@ private:
 
     wgpu::ShaderModule fullscreenTriangleShaderModule;
 
-    static const std::size_t NUM_SHADOW_CASCADES = 3;
-    float csmTextureSize{4096.f};
-
-    struct CSMData {
-        glm::vec4 cascadeFarPlaneZs;
-        std::array<glm::mat4, NUM_SHADOW_CASCADES> lightSpaceTMs;
-    };
-    wgpu::Buffer csmDataBuffer;
+    glm::vec3 sunLightDir;
 
     wgpu::ShaderModule meshDepthOnlyVertexShaderModule;
     wgpu::BindGroupLayout depthOnlyPerFrameBindGroupLayout;
-    wgpu::Texture csmShadowMap;
-    wgpu::TextureView csmShadowMapView;
-    wgpu::TextureFormat csmShadowMapFormat;
-    std::array<wgpu::BindGroup, NUM_SHADOW_CASCADES> csmBindGroups;
-    std::array<wgpu::Buffer, NUM_SHADOW_CASCADES> csmPerFrameDataBuffers;
-    std::array<Camera, NUM_SHADOW_CASCADES> csmCameras;
 
-    glm::vec3 sunLightDir;
+    CSMData csm;
     bool drawShadows{true};
 };

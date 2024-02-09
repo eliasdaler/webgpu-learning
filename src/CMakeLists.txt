@@ -22,6 +22,7 @@ add_executable(game
   MaterialCache.cpp
   MeshCache.cpp
 
+  CSM.cpp
   Game.cpp
   main.cpp
 )
