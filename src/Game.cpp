@@ -1458,8 +1458,10 @@ void Game::createSprite(Sprite& sprite, const std::filesystem::path& texturePath
 
 void Game::initCamera()
 {
-    static const float zNear = 0.1f;
-    static const float zFar = 800.f;
+    // static const float zNear = 0.1f;
+    // static const float zFar = 800.f;
+    static const float zNear = 1.f;
+    static const float zFar = 64.f;
     static const float fovX = glm::radians(45.f);
     static const float aspectRatio = (float)params.screenWidth / (float)params.screenHeight;
 
@@ -1632,10 +1634,15 @@ void Game::updateCSMFrustums(const Camera& camera)
     subFrustumCamera.setPosition(camera.getPosition());
     subFrustumCamera.setHeading(camera.getHeading());
 
-    std::array<float, NUM_SHADOW_CASCADES> percents{0.1f, 0.3f, 0.8f};
+    std::array<float, NUM_SHADOW_CASCADES> percents = {0.3f, 0.8f, 1.f};
     if (camera.getZFar() > 100.f) {
-        percents = {0.015f, 0.03f, 0.2f};
+        percents = {0.01f, 0.3f, 1.f};
     }
+
+    /* std::array<float, NUM_SHADOW_CASCADES> percents{0.05f, 0.1f, 0.3f, 0.8f};
+    if (camera.getZFar() > 100.f) {
+        percents = {0.01f, 0.02f, 0.03f, 0.2f};
+    } */
 
     std::array<float, NUM_SHADOW_CASCADES> cascadeFarPlaneZs{};
     std::array<glm::mat4, NUM_SHADOW_CASCADES> csmLightSpaceTMs{};
@@ -1722,6 +1729,7 @@ void Game::updateDevTools(float dt)
             initSwapChain(vSync);
         }
         ImGui::Checkbox("Frame limit", &frameLimit);
+        ImGui::Checkbox("Shadows", &drawShadows);
 
         const auto cameraPos = camera.getPosition();
         ImGui::Text("Camera pos: %.2f, %.2f, %.2f", cameraPos.x, cameraPos.y, cameraPos.z);
@@ -1808,37 +1816,41 @@ void Game::render()
             ZoneScopedN("CSM render pass");
 
             const auto renderPass = encoder.BeginRenderPass(&renderPassDesc);
-            renderPass.PushDebugGroup("Draw meshes to CSM");
 
-            renderPass.SetPipeline(meshDepthOnlyPipeline);
-            renderPass.SetBindGroup(0, csmBindGroups[i]);
+            if (drawShadows) {
+                renderPass.PushDebugGroup("Draw meshes to CSM");
 
-            auto prevMaterialIdx = NULL_MATERIAL_ID;
-            auto prevMeshId = NULL_MESH_ID;
+                renderPass.SetPipeline(meshDepthOnlyPipeline);
+                renderPass.SetBindGroup(0, csmBindGroups[i]);
 
-            const auto frustum = edge::createFrustumFromCamera(csmCameras[i]);
+                auto prevMaterialIdx = NULL_MATERIAL_ID;
+                auto prevMeshId = NULL_MESH_ID;
 
-            for (const auto& dcIdx : sortedDrawCommands) {
-                const auto& dc = drawCommands[dcIdx];
+                const auto frustum = edge::createFrustumFromCamera(csmCameras[i]);
 
-                // hack: don't cull big objects, because shadows from them might disappear
-                if (dc.worldBoundingSphere.radius < 2.f &&
-                    !edge::isInFrustum(frustum, dc.worldBoundingSphere)) {
-                    continue;
+                for (const auto& dcIdx : sortedDrawCommands) {
+                    const auto& dc = drawCommands[dcIdx];
+
+                    // hack: don't cull big objects, because shadows from them might disappear
+                    if (dc.worldBoundingSphere.radius < 2.f &&
+                        !edge::isInFrustum(frustum, dc.worldBoundingSphere)) {
+                        continue;
+                    }
+
+                    renderPass.SetBindGroup(1, dc.meshBindGroup);
+
+                    if (dc.meshId != prevMeshId) {
+                        prevMeshId = dc.meshId;
+                        renderPass.SetIndexBuffer(
+                            dc.mesh.indexBuffer, wgpu::IndexFormat::Uint16, 0, wgpu::kWholeSize);
+                    }
+
+                    renderPass.DrawIndexed(dc.mesh.indexBufferSize, 1, 0, 0, 0);
                 }
 
-                renderPass.SetBindGroup(1, dc.meshBindGroup);
-
-                if (dc.meshId != prevMeshId) {
-                    prevMeshId = dc.meshId;
-                    renderPass.SetIndexBuffer(
-                        dc.mesh.indexBuffer, wgpu::IndexFormat::Uint16, 0, wgpu::kWholeSize);
-                }
-
-                renderPass.DrawIndexed(dc.mesh.indexBufferSize, 1, 0, 0, 0);
+                renderPass.PopDebugGroup();
             }
 
-            renderPass.PopDebugGroup();
             renderPass.End();
         }
     }

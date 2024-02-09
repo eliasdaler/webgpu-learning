@@ -20,7 +20,7 @@ struct DirectionalLight {
     colorAndIntensity: vec4f,
 };
 
-const NUM_SHADOW_CASCADES = 4;
+const NUM_SHADOW_CASCADES = 3;
 
 struct CSMData {
     cascadeFarPlaneZs: vec4f,

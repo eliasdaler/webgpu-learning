@@ -229,7 +229,7 @@ private:
 
     wgpu::ShaderModule fullscreenTriangleShaderModule;
 
-    static const std::size_t NUM_SHADOW_CASCADES = 4;
+    static const std::size_t NUM_SHADOW_CASCADES = 3;
     float csmTextureSize{4096.f};
 
     struct CSMData {
@@ -248,4 +248,5 @@ private:
     std::array<Camera, NUM_SHADOW_CASCADES> csmCameras;
 
     glm::vec3 sunLightDir;
+    bool drawShadows{true};
 };
