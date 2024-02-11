@@ -4,7 +4,7 @@
 
 #include <webgpu/webgpu_cpp.h>
 
-class Texture;
+struct Texture;
 
 class MipMapGenerator {
 public:

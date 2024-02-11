@@ -1,5 +1,7 @@
 #include "MipMapGenerator.h"
 
+#include <array>
+
 #include <util/WebGPUUtil.h>
 
 namespace
